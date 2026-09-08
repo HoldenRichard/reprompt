@@ -1,0 +1,11 @@
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-09-01T10:00:00Z","message":{"role":"user","content":"Please refactor the login view so the error banner shows the server message instead of a generic string, and keep the existing analytics events untouched."}}
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"message":{"role":"user","content":"<command-name>/clear</command-name>"}}
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"message":{"role":"user","content":"/compact"}}
+{"type":"user","isSidechain":true,"origin":{"kind":"human"},"message":{"role":"user","content":"This is a sidechain prompt that is definitely long enough to pass the minimum length filter easily."}}
+{"type":"user","isSidechain":false,"origin":null,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok"}]}}
+{"type":"user","isSidechain":false,"origin":{"kind":"task-notification"},"message":{"role":"user","content":"Agent finished with a long notification message that should be excluded from the harvest because it is not human."}}
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"Write me a cover letter for the Stripe internship using my resume, keep it under 250 words and mention the payments project."},{"type":"image","source":{}}]}}
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"message":{"role":"user","content":"short"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Sure, here is a long assistant reply that must never be harvested as a prompt because it is not a user turn at all."}]}}
+{"type":"user","isSidechain":false,"origin":{"kind":"human"},"message":{"role":"user","content":"please   REFACTOR the login view so the error banner shows the server message instead of a generic string, and keep the existing analytics events untouched."}}
+not json at all
