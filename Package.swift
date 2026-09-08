@@ -35,6 +35,9 @@ let package = Package(
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(name: "RepromptCoreTests", dependencies: ["RepromptCore"]),
+        // No defaultIsolation here: the URLProtocol test double must stay nonisolated.
+        // Suites that touch main-actor app types annotate themselves with @MainActor.
+        .testTarget(name: "RepromptAppTests", dependencies: ["Reprompt", "RepromptCore"]),
         .testTarget(
             name: "HarnessTests",
             dependencies: ["RepromptHarness"],

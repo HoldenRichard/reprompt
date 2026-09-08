@@ -9,8 +9,7 @@ struct OverlayView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
         }
@@ -38,8 +37,8 @@ struct OverlayView: View {
         case .askingQuestions: Text("Thinking of questions…")
         case .questions: Text("Answer, then ⌘↩")
         case .streaming: Text(session.ttfbMs.map { String(format: "first token %.0f ms", $0) } ?? "Waiting…")
-        case .result, .editing:
-            Text(session.totalMs.map { String(format: "%.1f s", $0 / 1000) } ?? "")
+        case .result, .editing: Text(session.totalMs.map { String(format: "%.1f s", $0 / 1000) } ?? "")
+        case .accepting: Text("Pasting…")
         case .failed: Text("Failed")
         }
     }
@@ -56,7 +55,7 @@ struct OverlayView: View {
             if let q = session.questions {
                 ClarifyView(questions: q, answers: $session.answers, onSubmit: session.submitAnswers)
             }
-        case .streaming, .result:
+        case .streaming, .result, .accepting:
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(session.text.isEmpty ? " " : session.text)
@@ -101,6 +100,12 @@ struct OverlayView: View {
             Spacer()
             Button("Dismiss") { session.dismiss() }
                 .keyboardShortcut(.cancelAction)
+            // The Questions step advertises Cmd+Return, so it needs a control that binds it.
+            if session.canSubmitAnswers {
+                Button("Continue") { session.submitAnswers() }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .buttonStyle(.borderedProminent)
+            }
             if session.phase == .result {
                 Button("Edit") { session.beginEdit() }
                     .keyboardShortcut("e", modifiers: .command)

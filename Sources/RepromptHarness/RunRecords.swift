@@ -68,12 +68,21 @@ struct RunRecord: Codable, Sendable {
 }
 
 enum RunWriter {
-    static func newRunDirectory(under root: URL) throws -> URL {
+    static func newRunDirectory(under root: URL, now: Date = Date()) throws -> URL {
         let f = DateFormatter()
         f.dateFormat = "yyyyMMdd-HHmmss"
         f.timeZone = TimeZone(identifier: "UTC")
-        let dir = root.appendingPathComponent(f.string(from: Date()))
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = f.string(from: now)
+        let fm = FileManager.default
+        // Two runs launched in the same second must not share a directory and mix results.
+        var dir = root.appendingPathComponent(stamp)
+        var suffix = 2
+        while fm.fileExists(atPath: dir.path) {
+            dir = root.appendingPathComponent("\(stamp)-\(suffix)")
+            suffix += 1
+        }
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 

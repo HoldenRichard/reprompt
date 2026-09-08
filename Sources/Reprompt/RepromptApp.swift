@@ -11,7 +11,9 @@ struct RepromptApp: App {
             Image(systemName: delegate.settings.mode == .quick ? "text.badge.checkmark" : "text.badge.plus")
         }
         Settings {
-            SettingsView(settings: delegate.settings) { delegate.registerHotkey($0) }
+            SettingsView(settings: delegate.settings, hotkeyError: delegate.hotkeyError) {
+                delegate.registerHotkey($0)
+            }
         }
     }
 }

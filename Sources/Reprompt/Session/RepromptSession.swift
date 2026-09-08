@@ -2,7 +2,12 @@ import AppKit
 import Foundation
 import RepromptCore
 
-/// One hotkey invocation: grab -> (questions) -> stream -> result -> accept/dismiss.
+/// One hotkey invocation: grab -> (questions) -> stream -> result -> accept or dismiss.
+///
+/// Every phase transition that guards an action is made SYNCHRONOUSLY, before the async work
+/// starts. Setting the phase inside the Task instead left a window in which the guard still
+/// passed, so a second Accept pasted the rewrite twice and a second submit ran two streams
+/// that interleaved into the same buffer.
 @Observable
 final class RepromptSession {
     enum Phase: Equatable {
@@ -12,6 +17,7 @@ final class RepromptSession {
         case streaming
         case result
         case editing
+        case accepting
         case failed(String, missingKey: Bool)
     }
 
@@ -28,42 +34,80 @@ final class RepromptSession {
     private(set) var totalMs: Double?
     private(set) var notice: String?
 
+    /// Called when the session is finished with the overlay.
     var onFinished: (() -> Void)?
+    /// Called once the selection has been read, so the overlay can safely take key focus.
+    var onReadyForKeyboard: (() -> Void)?
+    /// Called when Reprompt itself must come forward for text entry.
     var onNeedsActivation: (() -> Void)?
 
+    private let reader: any SelectionReading
+    private let inserter: any TextInserting
+    private let makeOptimizer: (OptimizerConfig) throws -> PromptOptimizer
     private var task: Task<Void, Never>?
+    /// True once Reprompt took focus, which makes the captured element unreliable.
+    private var didActivate = false
     private let clock = ContinuousClock()
 
-    init(mode: Mode, settings: AppSettings) {
+    init(mode: Mode,
+         settings: AppSettings,
+         reader: any SelectionReading = SelectionReader(),
+         inserter: any TextInserting = TextInserter(),
+         makeOptimizer: ((OptimizerConfig) throws -> PromptOptimizer)? = nil) {
         self.mode = mode
         self.settings = settings
         self.servedModel = settings.modelID
+        self.reader = reader
+        self.inserter = inserter
+        self.makeOptimizer = makeOptimizer ?? { config in
+            PromptOptimizer(client: ClaudeClient(apiKey: try APIKeyProvider.resolve()),
+                            config: config, prompts: try PromptLibrary.loadAll())
+        }
     }
 
-    var isBusy: Bool { phase == .grabbing || phase == .askingQuestions || phase == .streaming }
+    var isBusy: Bool {
+        switch phase {
+        case .grabbing, .askingQuestions, .streaming, .accepting: true
+        default: false
+        }
+    }
     var canAccept: Bool { phase == .result || phase == .editing }
+    var canSubmitAnswers: Bool { phase == .questions }
     var finalText: String { phase == .editing ? editText : text }
 
     // MARK: Flow
 
     func start() {
+        guard task == nil else { return }
         task = Task { await run() }
     }
 
     private func run() async {
         do {
-            let sel = try await SelectionReader().read()
+            let sel = try await reader.read()
             selection = sel
             try Task.checkCancellation()
-            let optimizer = try makeOptimizer()
+            // The overlay only takes key focus now: doing it before the grab would have
+            // routed the synthetic Cmd+C to Reprompt's own panel instead of the target app.
+            onReadyForKeyboard?()
+            let optimizer = try makeOptimizer(settings.optimizerConfig)
             if mode == .clarify {
                 phase = .askingQuestions
-                let q = try await optimizer.clarifyingQuestions(for: sel.text)
-                questions = q.questions
-                answers = Array(repeating: "", count: q.questions.questions.count)
-                servedModel = q.servedModel
+                let result = try await optimizer.clarifyingQuestions(for: sel.text)
+                servedModel = result.servedModel
+                try Task.checkCancellation()
+                if result.questions.isEmpty {
+                    // Nothing to ask. Falling through to a plain rewrite beats showing an
+                    // empty form the user cannot submit.
+                    notice = "No clarifying questions were needed."
+                    try await stream(optimizer: optimizer, original: sel.text, answers: [])
+                    return
+                }
+                questions = result.questions
+                answers = Array(repeating: "", count: result.questions.questions.count)
                 phase = .questions
                 onNeedsActivation?()
+                didActivate = true
                 return
             }
             try await stream(optimizer: optimizer, original: sel.text, answers: [])
@@ -75,12 +119,16 @@ final class RepromptSession {
 
     func submitAnswers() {
         guard phase == .questions, let sel = selection, let qs = questions else { return }
-        let clar = zip(qs.questions, answers).map { q, a in
-            ClarifyAnswer(questionID: q.id, question: q.question, answer: a.trimmingCharacters(in: .whitespacesAndNewlines))
+        let clarifications = zip(qs.questions, answers).map { q, a in
+            ClarifyAnswer(questionID: q.id, question: q.question,
+                          answer: a.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        phase = .streaming
+        task?.cancel()
         task = Task {
             do {
-                try await stream(optimizer: try makeOptimizer(), original: sel.text, answers: clar)
+                try await stream(optimizer: try makeOptimizer(settings.optimizerConfig),
+                                 original: sel.text, answers: clarifications)
             } catch is CancellationError {
             } catch {
                 fail(error)
@@ -101,23 +149,21 @@ final class RepromptSession {
             case .blockStart(_, let type, let to):
                 if type == "fallback", let to { servedModel = to; notice = "Served by \(to) after a fallback." }
             case .textDelta(let t):
-                if first == nil { first = clock.now; ttfbMs = ms(first! - start) }
+                if first == nil { first = clock.now; ttfbMs = Self.ms(first! - start) }
                 text += t
             case .messageDelta(let reason, _): stop = reason
             case .messageStop, .ping: break
             case .error(let e): throw e
             }
         }
-        totalMs = ms(clock.now - start)
+        // A cancelled stream ends the loop without throwing, so check before committing a
+        // result: otherwise Escape mid-stream shows partial text as a finished rewrite.
+        try Task.checkCancellation()
+        totalMs = Self.ms(clock.now - start)
         if stop == .refusal { throw ClaudeError.refusal(category: nil, explanation: nil) }
-        if stop == .maxTokens { notice = "Output was cut off at max tokens; raise it in Settings." }
+        if stop == .maxTokens { notice = "Output was cut off at max tokens; raise the limit in Settings." }
         text = PromptOptimizer.cleanOutput(text)
         phase = .result
-    }
-
-    private func makeOptimizer() throws -> PromptOptimizer {
-        let key = try APIKeyProvider.resolve()
-        return PromptOptimizer(client: ClaudeClient(apiKey: key), config: settings.optimizerConfig, prompts: try PromptLibrary.loadAll())
     }
 
     private func fail(_ error: any Error) {
@@ -132,22 +178,33 @@ final class RepromptSession {
         editText = text
         phase = .editing
         onNeedsActivation?()
+        didActivate = true
     }
 
     func accept() {
         guard canAccept, let sel = selection else { return }
         let out = finalText
+        guard !out.isEmpty else {
+            notice = "Nothing to paste."
+            return
+        }
+        // Claim the phase before any await, so a second Accept cannot start a second paste.
+        phase = .accepting
+        task?.cancel()
         task = Task {
             do {
-                try await TextInserter().replace(sel, with: out)
+                try await inserter.replace(sel, with: out, preferAccessibility: !didActivate)
+                onFinished?()
+            } catch is CancellationError {
                 onFinished?()
             } catch {
-                phase = .failed("\(error)", missingKey: false)
+                fail(error)
             }
         }
     }
 
     func copyResult() {
+        guard !finalText.isEmpty else { return }
         TextInserter.copyToClipboard(finalText)
         notice = "Copied to clipboard."
     }
@@ -158,7 +215,7 @@ final class RepromptSession {
         onFinished?()
     }
 
-    private func ms(_ d: Duration) -> Double {
+    static func ms(_ d: Duration) -> Double {
         Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
     }
 }

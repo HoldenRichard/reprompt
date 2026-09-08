@@ -60,13 +60,20 @@ public struct ClaudeClient: Sendable {
                         try Self.check(response: response, body: body)
                     }
                     var parser = SSEParser()
+                    var sawStop = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         if let event = parser.feed(line) {
                             continuation.yield(event)
-                            if case .messageStop = event { break }
+                            if case .messageStop = event { sawStop = true; break }
                             if case .error(let e) = event { throw e }
                         }
+                    }
+                    // A stream that just stops is a dropped connection, not a finished
+                    // message. Reporting success here would hand the user a silently
+                    // truncated prompt.
+                    guard sawStop else {
+                        throw ClaudeError.invalidResponse("stream ended without message_stop")
                     }
                     continuation.finish()
                 } catch let e as ClaudeError {

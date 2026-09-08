@@ -41,9 +41,13 @@ public struct ClarifyQuestions: Codable, Sendable, Equatable {
         ],
     ]
 
-    public func clamped(min: Int = 2, max: Int = 3) -> ClarifyQuestions {
+    /// The schema cannot express "2 to 3 items", so the count is enforced here. There is
+    /// no floor: questions cannot be invented, and callers handle an empty set.
+    public func clamped(max: Int = 3) -> ClarifyQuestions {
         ClarifyQuestions(questions: Array(questions.prefix(max)))
     }
+
+    public var isEmpty: Bool { questions.isEmpty }
 }
 
 public struct ClarifyAnswer: Codable, Sendable, Equatable {

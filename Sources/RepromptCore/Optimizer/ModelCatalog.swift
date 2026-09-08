@@ -20,10 +20,16 @@ public struct ModelInfo: Sendable, Identifiable, Equatable {
     public let inputPricePerMTok: Double
     public let outputPricePerMTok: Double
 
+    /// `input_tokens` already excludes cache reads and cache creation, which the API
+    /// reports in their own fields; cache reads bill at 0.1x and 5-minute writes at 1.25x.
     public func cost(usage: Usage) -> Double {
-        let cached = Double(usage.cacheReadInputTokens ?? 0)
-        let uncached = Double(usage.inputTokens) - cached
-        return (uncached * inputPricePerMTok + cached * inputPricePerMTok * 0.1 + Double(usage.outputTokens) * outputPricePerMTok) / 1_000_000
+        let read = Double(usage.cacheReadInputTokens ?? 0)
+        let written = Double(usage.cacheCreationInputTokens ?? 0)
+        let fresh = Double(usage.inputTokens)
+        return (fresh * inputPricePerMTok
+            + read * inputPricePerMTok * 0.1
+            + written * inputPricePerMTok * 1.25
+            + Double(usage.outputTokens) * outputPricePerMTok) / 1_000_000
     }
 }
 

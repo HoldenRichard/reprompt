@@ -30,9 +30,20 @@ enum PromptCorpus {
         return s
     }
 
+    /// Files this writer owns: `NNNN-<project>.md`. Only these are cleared on rewrite, so
+    /// a hand-curated file dropped in the same directory survives.
+    static func isGeneratedFileName(_ name: String) -> Bool {
+        name.range(of: "^[0-9]{4}-.*\\.md$", options: .regularExpression) != nil
+    }
+
     static func write(_ prompts: [HarvestedPrompt], to dir: URL) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Clear the previous harvest so the directory and index.json cannot disagree.
+        for url in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        where isGeneratedFileName(url.lastPathComponent) {
+            try fm.removeItem(at: url)
+        }
         for p in prompts {
             try render(p).write(to: dir.appendingPathComponent(fileName(for: p)), atomically: true, encoding: .utf8)
         }

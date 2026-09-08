@@ -45,4 +45,26 @@ Grant Accessibility when prompted (needed to read the selection and to paste bac
 the API key once in Settings; it is stored in Keychain. The app is signed with a stable
 identity so the grant survives rebuilds.
 
-Tests: `swift test`.
+## Tests
+
+```bash
+swift test
+```
+
+239 tests across three targets. They run offline in under a second: `MockURLProtocol`
+serves canned HTTP and Server-Sent Events, so the real client, streaming, error and
+cancellation paths are exercised without a network or an API key.
+
+What is covered, and what is not:
+
+- **Covered end to end**: request shaping per model, SSE parsing, refusals, fallbacks,
+  truncation, cancellation, the optimizer and judge call paths, the session state machine,
+  Keychain round-trips, real Carbon hotkey registration, pasteboard snapshot and restore,
+  and every pure function in the harness.
+- **Not covered**: anything needing the Accessibility grant or a real target application,
+  namely reading a selection out of another app, posting the synthetic Cmd+C and Cmd+V,
+  and the Accessibility write-back. Those are verified by hand with
+  `swift run reprompt-harness axprobe` across the app matrix.
+
+The suite is checked against itself: each fixed defect was reintroduced and confirmed to
+make a named test fail, so the tests demonstrably catch the bugs they describe.

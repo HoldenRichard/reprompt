@@ -53,6 +53,16 @@ public struct Usage: Codable, Sendable, Equatable {
         self.cacheCreationInputTokens = cacheCreationInputTokens
         self.cacheReadInputTokens = cacheReadInputTokens
     }
+
+    /// Absent token counts decode as zero rather than failing. `message_delta` omits
+    /// `input_tokens`, and a strict decode there would abort the entire stream.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        inputTokens = try c.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0
+        outputTokens = try c.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
+        cacheCreationInputTokens = try c.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens)
+        cacheReadInputTokens = try c.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
+    }
 }
 
 public enum ContentBlock: Sendable, Equatable, Decodable {
@@ -92,10 +102,12 @@ public struct MessageResponse: Decodable, Sendable {
     public var text: String {
         content.compactMap { if case .text(let t) = $0 { t } else { nil } }.joined()
     }
-    /// Model that actually served, if a fallback block is present.
+    /// Model that actually served. One fallback block is emitted per model that declined,
+    /// so the LAST block names the model that finally answered.
     public var servedModel: String {
-        for block in content { if case .fallback(_, let to) = block, let to { return to } }
-        return model
+        var served = model
+        for block in content { if case .fallback(_, let to) = block, let to { served = to } }
+        return served
     }
 }
 

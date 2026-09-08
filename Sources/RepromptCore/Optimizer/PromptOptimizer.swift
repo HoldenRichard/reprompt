@@ -94,6 +94,9 @@ public struct PromptOptimizer: Sendable {
             case .error(let e): throw e
             }
         }
+        // Cancellation terminates the stream without throwing, so a cancelled call would
+        // otherwise return its partial text as a successful result.
+        try Task.checkCancellation()
         let end = clock.now
         if stop == .refusal { throw ClaudeError.refusal(category: nil, explanation: nil) }
         if stop == .maxTokens { throw ClaudeError.truncated(partial: text) }
@@ -123,17 +126,29 @@ public struct PromptOptimizer: Sendable {
             total: total, usage: response.usage, promptHash: prompts.clarifyQuestions.sha256)
     }
 
-    /// Strip wrapping code fences or tags a model occasionally adds around the prompt.
+    /// Strip a wrapping code fence or tag a model occasionally adds around the prompt.
+    /// Only strips when the WHOLE output is wrapped: half-stripping corrupts the prompt,
+    /// which is worse than leaving a stray fence for the user to see.
     public static func cleanOutput(_ raw: String) -> String {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("```") {
-            if let nl = s.firstIndex(of: "\n") { s = String(s[s.index(after: nl)...]) } else { s = "" }
-            if s.hasSuffix("```") { s = String(s.dropLast(3)) }
-            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stripped = strip(trimmed)
+        // Never turn something into nothing: Accept replaces the user's selection with this
+        // string, so an empty result would silently delete the text they had selected.
+        return stripped.isEmpty ? trimmed : stripped
+    }
+
+    private static func strip(_ input: String) -> String {
+        var s = input
+        if s.hasPrefix("```"), s.hasSuffix("```"), s.count > 6, let nl = s.firstIndex(of: "\n") {
+            let afterOpen = s.index(after: nl)
+            let beforeClose = s.index(s.endIndex, offsetBy: -3)
+            if afterOpen <= beforeClose {
+                s = String(s[afterOpen..<beforeClose]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         }
-        for tag in ["optimized_prompt", "prompt", "rewritten_prompt"] {
+        for tag in ["optimized_prompt", "rewritten_prompt", "prompt"] {
             let open = "<\(tag)>", close = "</\(tag)>"
-            if s.hasPrefix(open), s.hasSuffix(close) {
+            if s.hasPrefix(open), s.hasSuffix(close), s.count >= open.count + close.count {
                 s = String(s.dropFirst(open.count).dropLast(close.count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }

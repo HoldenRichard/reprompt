@@ -67,7 +67,7 @@ extension Hotkey {
 final class AppSettings {
     static let shared = AppSettings()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private enum Key {
         static let mode = "mode", model = "modelID", effort = "effort", maxTokens = "maxTokens"
         static let thinking = "thinking", fastMode = "fastMode", position = "overlayPosition", hotkey = "hotkey"
@@ -84,7 +84,9 @@ final class AppSettings {
         didSet { if let d = try? JSONEncoder().encode(hotkey) { defaults.set(d, forKey: Key.hotkey) } }
     }
 
-    private init() {
+    /// `defaults` is injectable so tests use a scratch suite instead of the real one.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         mode = Mode(rawValue: defaults.string(forKey: Key.mode) ?? "") ?? .quick
         let storedModel = defaults.string(forKey: Key.model) ?? ""
         modelID = ModelCatalog.info(for: storedModel) != nil ? storedModel : ModelCatalog.default.id
@@ -108,14 +110,22 @@ final class AppSettings {
                         quickThinking: thinking, fastMode: fastMode, useFallbacks: true)
     }
 
+    /// `.requiresApproval` means the item IS registered but the user has not approved it in
+    /// System Settings, so treating only `.enabled` as on made the toggle contradict reality.
+    var launchAtLoginStatus: SMAppService.Status { SMAppService.mainApp.status }
     var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
-        set {
-            do {
-                if newValue { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            } catch {
-                NSLog("Reprompt: launch at login change failed: \(error)")
-            }
+        let s = launchAtLoginStatus
+        return s == .enabled || s == .requiresApproval
+    }
+
+    /// Throws so the caller can tell the user, instead of silently leaving the toggle wrong.
+    func setLaunchAtLogin(_ enabled: Bool) throws {
+        if enabled {
+            guard launchAtLoginStatus != .enabled else { return }
+            try SMAppService.mainApp.register()
+        } else {
+            guard launchAtLoginStatus != .notRegistered else { return }
+            try SMAppService.mainApp.unregister()
         }
     }
 }

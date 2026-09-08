@@ -1,7 +1,7 @@
 import AppKit
 import ApplicationServices
 
-enum SelectionError: Error, CustomStringConvertible {
+enum SelectionError: Error, CustomStringConvertible, Equatable {
     case notTrusted
     case secureInput
     case noSelection
@@ -10,7 +10,7 @@ enum SelectionError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .notTrusted: "Reprompt needs Accessibility permission (System Settings > Privacy & Security > Accessibility)."
-        case .secureInput: "Secure input is active (a password field or Terminal's Secure Keyboard Entry); cannot read the selection."
+        case .secureInput: "Secure input is active (a password field, or Terminal's Secure Keyboard Entry), so the selection cannot be read."
         case .noSelection: "No text is selected."
         case .cannotPostEvents: "Reprompt cannot send keystrokes; grant Accessibility permission."
         }
@@ -18,19 +18,24 @@ enum SelectionError: Error, CustomStringConvertible {
 }
 
 struct Selection {
-    enum Source { case accessibility, clipboard }
+    enum Source: Equatable { case accessibility, clipboard }
     var text: String
     var app: NSRunningApplication?
     var source: Source
-    /// Focused element when the AX path succeeded; used for the AX write-back.
+    /// Focused element when the Accessibility path succeeded; used for the write-back.
     var element: AXUIElement?
 }
 
-/// Reads the current selection: Accessibility first (clipboard untouched), then a simulated
-/// Cmd+C with the pasteboard snapshotted and restored. Electron apps usually need the fallback.
-struct SelectionReader {
+protocol SelectionReading {
+    func read() async throws -> Selection
+}
+
+/// Reads the current selection: Accessibility first, which leaves the clipboard untouched,
+/// then a simulated Cmd+C with the pasteboard snapshotted and restored. Chromium and
+/// Electron apps generally need the fallback.
+struct SelectionReader: SelectionReading {
     var axTimeout: Float = 0.3
-    var copyTimeout: Duration = .milliseconds(350)
+    var copyTimeout: Duration = .milliseconds(400)
 
     func read() async throws -> Selection {
         guard AccessibilityPermission.isTrusted else { throw SelectionError.notTrusted }
@@ -41,14 +46,15 @@ struct SelectionReader {
         return try await readViaClipboard(app: app)
     }
 
-    // MARK: AX path
+    // MARK: Accessibility path
 
     func readViaAccessibility() -> (text: String, element: AXUIElement)? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, axTimeout)
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
-              let focusedRef else { return nil }
+              let focusedRef,
+              CFGetTypeID(focusedRef) == AXUIElementGetTypeID() else { return nil }
         let focused = focusedRef as! AXUIElement
         AXUIElementSetMessagingTimeout(focused, axTimeout)
         var selectedRef: CFTypeRef?
@@ -68,6 +74,7 @@ struct SelectionReader {
         defer { snapshot.restore(to: pb) }
         pb.clearContents()
         let baseline = pb.changeCount
+        await KeySimulator.waitForModifiersToClear()
         KeySimulator.copy()
         let clock = ContinuousClock()
         let deadline = clock.now + copyTimeout

@@ -33,7 +33,8 @@ public struct SSEParser: Sendable {
     }
 
     /// Feed one line (without its trailing newline). Returns an event when the line completes one.
-    public mutating func feed(_ line: String) -> StreamEvent? {
+    public mutating func feed(_ rawLine: String) -> StreamEvent? {
+        let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
         guard line.hasPrefix("data:") else { return nil }
         var payload = line.dropFirst(5)
         if payload.first == " " { payload = payload.dropFirst() }

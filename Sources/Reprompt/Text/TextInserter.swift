@@ -1,42 +1,50 @@
 import AppKit
 import ApplicationServices
 
-enum InsertError: Error, CustomStringConvertible {
+enum InsertError: Error, CustomStringConvertible, Equatable {
     case cannotPostEvents
+    case nothingToInsert
+
     var description: String {
         switch self {
-        case .cannotPostEvents: "Reprompt cannot send keystrokes; grant Accessibility permission. The text was copied to the clipboard instead."
+        case .cannotPostEvents: "Reprompt cannot send keystrokes; grant Accessibility permission. The text is on the clipboard instead."
+        case .nothingToInsert: "There was nothing to paste."
         }
     }
 }
 
-/// Writes the replacement back: AX `kAXSelectedText` when the element accepts it and the
-/// write can be verified, otherwise re-activate the target app and paste via Cmd+V with the
-/// pasteboard snapshotted and restored afterwards.
-struct TextInserter {
-    var settleDelay: Duration = .milliseconds(220)
+protocol TextInserting {
+    /// `preferAccessibility` is false once Reprompt has taken focus itself (Clarify or Edit),
+    /// because the element captured at grab time may no longer be the one the user is in.
+    func replace(_ selection: Selection, with text: String, preferAccessibility: Bool) async throws
+}
 
-    func replace(_ selection: Selection, with text: String) async throws {
-        if let element = selection.element, writeViaAccessibility(element: element, text: text) {
+/// Writes the rewrite back: through the Accessibility API when the focused element accepts
+/// it, otherwise by re-activating the target application and pasting.
+struct TextInserter: TextInserting {
+    /// How long the target app is given to consume the paste before the clipboard is put back.
+    var settleDelay: Duration = .milliseconds(300)
+
+    func replace(_ selection: Selection, with text: String, preferAccessibility: Bool = true) async throws {
+        guard !text.isEmpty else { throw InsertError.nothingToInsert }
+        if preferAccessibility, let element = selection.element, writeViaAccessibility(element: element, text: text) {
             return
         }
         try await paste(text: text, into: selection.app)
     }
 
+    /// Returns true when the element accepted the write.
+    ///
+    /// A successful `SetAttributeValue` is trusted rather than re-verified against
+    /// `kAXValue`: some views normalise whitespace or expose only the visible portion, so
+    /// verification produces false negatives, and falling through to the paste path after a
+    /// write that actually landed inserts the rewrite TWICE. A false success is recoverable
+    /// (nothing happens and the user retries); a double insert corrupts their document.
     func writeViaAccessibility(element: AXUIElement, text: String) -> Bool {
         var settable: DarwinBoolean = false
         guard AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable) == .success,
               settable.boolValue else { return false }
-        guard AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success else {
-            return false
-        }
-        // Chromium views can report success without changing anything; verify via the value.
-        var valueRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success,
-           let value = valueRef as? String {
-            return value.contains(text)
-        }
-        return true
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
     }
 
     func paste(text: String, into app: NSRunningApplication?) async throws {
@@ -48,17 +56,22 @@ struct TextInserter {
         }
         if let app, !app.isActive {
             app.activate()
-            try await Task.sleep(for: .milliseconds(80))
+            try? await Task.sleep(for: .milliseconds(120))
         }
         let snapshot = PasteboardSnapshot.capture(pb)
+        // Restore even if this task is cancelled mid-paste; without the defer, pressing
+        // Escape inside the settle window left the rewrite on the user's clipboard forever.
+        defer { snapshot.restore(to: pb) }
         pb.clearContents()
         pb.setString(text, forType: .string)
+        await KeySimulator.waitForModifiersToClear()
         KeySimulator.paste()
-        try await Task.sleep(for: settleDelay)
-        snapshot.restore(to: pb)
+        // No signal exists for "the target consumed the paste", so this is a bounded wait.
+        // It deliberately ignores cancellation so the clipboard is not restored too early.
+        try? await Task.sleep(for: settleDelay)
     }
 
-    /// Explicit "Copy" action: leaves the text on the clipboard on purpose.
+    /// An explicit Copy action: the text is meant to stay on the clipboard.
     static func copyToClipboard(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
