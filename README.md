@@ -89,5 +89,11 @@ What is covered, and what is not:
   and the Accessibility write-back. Those are verified by hand with
   `swift run reprompt-harness axprobe` across the app matrix.
 
+Before pushing, install the hook that refuses a push unless the suite passes:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
 The suite is checked against itself: each fixed defect was reintroduced and confirmed to
 make a named test fail, so the tests demonstrably catch the bugs they describe.

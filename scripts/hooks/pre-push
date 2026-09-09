@@ -1,0 +1,18 @@
+#!/bin/bash
+# Refuses a push unless the test suite passes.
+#
+# Born from DEF-325 (2026-09-09): a failing test reached the public repository because the
+# push was chained on grep's exit status rather than on the test run's. Install once with
+#   git config core.hooksPath scripts/hooks
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+log="$(mktemp)"
+echo "pre-push: running swift test"
+if swift test > "$log" 2>&1; then
+  grep -E "Test run with" "$log" | tail -1
+  rm -f "$log"
+  exit 0
+fi
+grep -E "✘|error:" "$log" | head -20
+echo "pre-push: tests failed, push refused (log: $log)"
+exit 1
