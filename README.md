@@ -1,99 +1,127 @@
+<p align="center"><img src="assets/preview-appicon.png" width="128" alt="Reprompt icon"></p>
+
 # Reprompt
 
-A macOS menubar utility that rewrites the prompt you have selected, in place, with one hotkey.
-Select text in any app, press ⌘⇧R, and an overlay shows an optimized version to accept,
-edit, or dismiss. Quick mode rewrites immediately; Clarify mode asks two or three questions
-first.
+[![CI](https://github.com/HoldenRichard/reprompt/actions/workflows/ci.yml/badge.svg)](https://github.com/HoldenRichard/reprompt/actions/workflows/ci.yml)
 
-The optimizer system prompt is the product. It is developed against real prompts with the
-harness before the app is trusted with it.
+Rewrite the prompt you're about to send, in place, with one hotkey.
 
-## Layout
+Select text in any app, or just leave the cursor in a text field, and press **⌘⇧R**. A
+small overlay streams back a sharper version of what you wrote: structured where yours was
+loose, explicit about the output you want, stripped of padding, and still in your voice.
+Accept replaces the original where it sits. It runs on Groq's free tier, so it costs
+nothing and answers in a few hundred milliseconds.
 
-- `Sources/RepromptCore` — shared library: raw-HTTPS Claude client with SSE streaming, the
-  request builder with per-model capability flags, the optimizer, prompt resources
-  (compiled in), Keychain storage.
-- `Sources/RepromptHarness` — `reprompt-harness` CLI: `harvest`, `optimize`, `run`, `judge`, `axprobe`.
-- `Sources/Reprompt` — the menubar app (SwiftUI + AppKit).
-- `scripts/bundle.sh` — assembles and signs `dist/Reprompt.app`.
-- `prompts/` and `runs/` — local only, gitignored (they contain your real prompts).
+**Quick** mode rewrites immediately. **Clarify** mode asks two or three questions first,
+for prompts where the answer would genuinely change the result.
 
-## Bring your own key
+## Requirements
 
-Reprompt talks to [Groq](https://console.groq.com/keys) by default. Its free tier does not
-train on your prompts, does not retain them by default, and answers in a few hundred
-milliseconds. Nothing you select leaves your machine except the text sent to that one
-request. Sign up, create a key, and store it once:
+- macOS 26 or later, on Apple silicon or Intel
+- Xcode 26 with the Swift 6.3 toolchain, to build from source
+- A free [Groq](https://console.groq.com/keys) account, no card required
+- The Accessibility permission, granted on first launch
+
+Building from source is the supported way to run it. There is no notarized download: the
+bundle is signed with whatever Apple Development identity is in your keychain, which is
+enough for your own Mac.
+
+## Install
 
 ```bash
+git clone https://github.com/HoldenRichard/reprompt.git
+cd reprompt
 security add-generic-password -a groq-api-key -s com.holdenrichard.reprompt -A -w
-```
-
-The command prompts for the key so it never touches your shell history. `-A` lets any app
-on your Mac read the item without a password prompt; drop it for a stricter keychain entry,
-at the cost of a prompt after each rebuild. Anthropic and Gemini clients exist behind the
-same interface (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`, or their own keychain accounts) if
-you would rather pay for a different model.
-
-## Harness
-
-```bash
-swift run reprompt-harness models     # what the provider offers your account, checked against the catalog
-swift run reprompt-harness harvest    # ~/.claude/projects -> prompts/raw, read-only over the transcripts
-# copy 8-10 prompts into prompts/curated/ (see prompts/CANDIDATES.md)
-swift run reprompt-harness optimize "make the login screen less janky"
-swift run reprompt-harness run --judge --both-orders            # prompts/curated, blind pairwise judge
-swift run reprompt-harness run --prompts prompts/raw --sample 40 --judge --both-orders --prompts-dir my-prompts/
-swift run reprompt-harness judge --run runs/<timestamp>          # re-judge without re-generating
-swift run reprompt-harness axprobe                              # what Accessibility sees in the frontmost app
-```
-
-`--prompts-dir` points at a directory containing edited copies of the prompt files
-(`optimizer_system.md` etc.) so the prompt can be iterated without rebuilding. Every run
-freezes the prompts it used and their SHA-256 under `runs/<timestamp>/`. `prompts/` and
-`runs/` are gitignored: they hold your real prompts.
-
-## App
-
-```bash
 scripts/bundle.sh && open dist/Reprompt.app
 ```
 
-Grant Accessibility when prompted; it is needed to read your selection and to paste the
-rewrite back. `bundle.sh` signs with the first Apple Development identity in your keychain,
-so the grant survives rebuilds; without one it falls back to ad-hoc signing and warns you.
+The `security` line prompts for your Groq key twice and never echoes it, so it stays out
+of your shell history. `-A` lets any app on your Mac read the item without a password
+prompt; leave it off for a stricter entry, at the cost of a prompt after each rebuild.
 
-Press ⌘⇧R with text selected, or with the cursor simply sitting in a text field, in which
-case the whole field is used. Accept replaces the text in place. Clarify mode, from the
-menubar, asks two or three questions first. The default model is GPT-OSS 120B; Qwen 3.8
-is the faster choice.
+macOS will ask for Accessibility permission the first time. Reprompt needs it to read your
+selection and to paste the rewrite back; it never needs Input Monitoring, because it
+listens to nothing.
 
-## Tests
+## Use
+
+| | |
+|---|---|
+| ⌘⇧R | Rewrite the selection, or the whole field if nothing is selected |
+| ⌘↩ | Accept, replacing the original text in place |
+| ⌘E | Edit the rewrite before accepting |
+| ⇧⌘C | Copy the rewrite instead of pasting it |
+| ⎋ | Dismiss |
+
+The menubar icon switches between Quick and Clarify and picks the model. GPT-OSS 120B is
+the default; Qwen 3.8 27B answers in about 200 ms if you would rather have speed. Settings
+has the hotkey, the model, dark mode, and the whole-field behaviour.
+
+## Privacy
+
+The text you select is sent to Groq over HTTPS, once per rewrite, and nothing else leaves
+your Mac. Groq's stated policy is that it does not train on inputs on any tier and does not
+retain them by default; read [their data page](https://console.groq.com/docs/your-data)
+and decide for yourself. Your API key lives in the macOS Keychain, never in a file.
+Clipboard-based reads and writes snapshot your clipboard and put it back afterwards.
+
+Anthropic and Gemini clients exist behind the same interface if you would rather pay for
+a different model: set `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, or store a key under the
+matching keychain account. Gemini's free tier trains on inputs, which is why it is not the
+default.
+
+## How it works
+
+Three targets in one Swift package, no Xcode project.
+
+- **RepromptCore** — a provider-neutral request type with Anthropic, Gemini and Groq
+  clients behind one protocol; streaming over raw HTTPS; the optimizer prompts compiled
+  into the binary; Keychain storage.
+- **Reprompt** — the menubar app. A Carbon global hotkey, which needs no permission. The
+  selection is read through the Accessibility API when the app allows it, otherwise
+  through a simulated Cmd+C with the clipboard restored. The overlay is a non-activating
+  panel, so the app you were in stays frontmost. Accept writes back through Accessibility
+  or pastes.
+- **reprompt-harness** — a CLI for tuning the optimizer prompt against your own real
+  prompts, with a blind pairwise judge. See below.
+
+## Tuning the prompt
+
+The system prompt is the product, and the harness is how it gets better. It pulls prompts
+you have actually written out of your Claude Code transcripts, rewrites each one, has the
+same model answer both versions, and asks a blind judge which answer served the original
+request better.
 
 ```bash
-swift test
+swift run reprompt-harness models     # what your account offers, checked against the catalog
+swift run reprompt-harness harvest    # ~/.claude/projects -> prompts/raw, read-only
+# copy 8-10 prompts into prompts/curated/
+swift run reprompt-harness optimize "make the login screen less janky"
+swift run reprompt-harness run --judge --both-orders
+swift run reprompt-harness run --prompts prompts/raw --sample 40 --judge --both-orders --prompts-dir my-prompts/
+swift run reprompt-harness judge --run runs/<timestamp>
 ```
 
-239 tests across three targets. They run offline in under a second: `MockURLProtocol`
-serves canned HTTP and Server-Sent Events, so the real client, streaming, error and
-cancellation paths are exercised without a network or an API key.
+`--prompts-dir` points at edited copies of the prompt files so you can iterate without
+rebuilding. Every run freezes the prompts it used and their SHA-256. `prompts/` and `runs/`
+are gitignored: they hold your real prompts.
 
-What is covered, and what is not:
-
-- **Covered end to end**: request shaping per model, SSE parsing, refusals, fallbacks,
-  truncation, cancellation, the optimizer and judge call paths, the session state machine,
-  Keychain round-trips, real Carbon hotkey registration, pasteboard snapshot and restore,
-  and every pure function in the harness.
-- **Not covered**: anything needing the Accessibility grant or a real target application,
-  namely reading a selection out of another app, posting the synthetic Cmd+C and Cmd+V,
-  and the Accessibility write-back. Those are verified by hand with
-  `swift run reprompt-harness axprobe` across the app matrix.
-
-Before pushing, install the hook that refuses a push unless the suite passes:
+## Development
 
 ```bash
-git config core.hooksPath scripts/hooks
+swift test                              # 312 tests, offline, under a second
+git config core.hooksPath scripts/hooks # refuse any push whose suite fails
+swift run reprompt-harness axprobe      # what Accessibility sees in the frontmost app
 ```
 
-The suite is checked against itself: each fixed defect was reintroduced and confirmed to
-make a named test fail, so the tests demonstrably catch the bugs they describe.
+The tests run without a network or a key: a `URLProtocol` double serves canned HTTP and
+Server-Sent Events, so the real client, streaming, error and cancellation paths are
+exercised. What they cannot cover is anything needing the Accessibility grant or another
+running application, which is what `axprobe` is for.
+
+Every fix in this repo was verified by reintroducing the defect and confirming a named
+test fails. If you send a change, that is the bar.
+
+## License
+
+[MIT](LICENSE)

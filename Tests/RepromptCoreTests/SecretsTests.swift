@@ -59,7 +59,11 @@ import Testing
     }
 }
 
-@Suite(.serialized) struct KeychainStoreTests {
+/// Hosted CI runners do not offer a writable login keychain, so the round-trips run only
+/// on a developer's machine.
+@Suite(.serialized, .disabled(if: ProcessInfo.processInfo.environment["CI"] != nil,
+                              "no writable keychain on a hosted runner"))
+struct KeychainStoreTests {
     /// A scratch service per test run, so the user's real stored key is never touched.
     let service = "com.holdenrichard.reprompt.tests.\(UUID().uuidString)"
     let account = "test-account"
