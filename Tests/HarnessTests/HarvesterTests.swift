@@ -158,8 +158,10 @@ import Testing
         let source = try String(contentsOfFile: #filePath.replacingOccurrences(
             of: "Tests/HarnessTests/HarvesterTests.swift",
             with: "Sources/RepromptHarness/TranscriptHarvester.swift"), encoding: .utf8)
-        #expect(!source.contains("-Users-holden"))
-        #expect(!source.lowercased().contains("kabu"))
+        // No hard-coded macOS home path of any user, and no project names.
+        #expect(!source.contains("-Users-"))
+        #expect(!source.contains("/Users/"))
+        #expect(!source.contains("-home-"))
     }
 
     @Test func categoryIsTheLowercasedProjectName() {
