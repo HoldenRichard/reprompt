@@ -122,29 +122,9 @@ enum RunWriter {
         return out.sorted { ($0.promptID, $0.model) < ($1.promptID, $1.model) }
     }
 
-    /// Finds an executable on PATH, so this works on Linux and Windows too.
-    static func executable(named name: String) -> URL? {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        #if os(Windows)
-        let separator: Character = ";"
-        let candidates = [name + ".exe", name]
-        #else
-        let separator: Character = ":"
-        let candidates = [name]
-        #endif
-        for dir in path.split(separator: separator) {
-            for candidate in candidates {
-                let url = URL(fileURLWithPath: String(dir)).appendingPathComponent(candidate)
-                if FileManager.default.isExecutableFile(atPath: url.path) { return url }
-            }
-        }
-        return nil
-    }
-
     static func gitRevision() -> String? {
-        guard let git = executable(named: "git") else { return nil }
         let p = Process()
-        p.executableURL = git
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         p.arguments = ["rev-parse", "--short", "HEAD"]
         let pipe = Pipe()
         p.standardOutput = pipe

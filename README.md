@@ -15,25 +15,6 @@ nothing and answers in a few hundred milliseconds.
 **Quick** mode rewrites immediately. **Clarify** mode asks two or three questions first,
 for prompts where the answer would genuinely change the result.
 
-## Platforms
-
-| | App | Library and harness |
-|---|---|---|
-| macOS 26 | yes | yes |
-| Linux | no | yes, built and tested in CI |
-| Windows | no | yes, built and tested in CI |
-
-The menubar app is macOS by nature: the global hotkey, the Accessibility API that reads
-your selection, the overlay panel and the Keychain are all Apple APIs. The core library and
-the prompt-tuning harness have no such ties and build anywhere Swift 6.2 does. On Linux and
-Windows there is no keychain, so set `GROQ_API_KEY` in the environment instead; streaming
-responses arrive whole rather than token by token there, because Foundation on those
-platforms has no streaming request API.
-
-A Windows and Linux app is the obvious next step and would be a separate, small
-implementation reusing the same prompt files and the same Groq API — the prompts are the
-product, and they are plain text. Contributions welcome.
-
 ## Requirements
 
 - macOS 26 or later, on Apple silicon or Intel
@@ -86,8 +67,7 @@ Clipboard-based reads and writes snapshot your clipboard and put it back afterwa
 
 Anthropic and Gemini clients exist behind the same interface if you would rather pay for
 a different model: set `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, or store a key under the
-matching keychain account. `GROQ_API_KEY` works the same way and is the only path on
-Linux and Windows. Gemini's free tier trains on inputs, which is why it is not the
+matching keychain account. Gemini's free tier trains on inputs, which is why it is not the
 default.
 
 ## How it works

@@ -59,7 +59,6 @@ import Testing
     }
 }
 
-#if canImport(Security)
 /// Hosted CI runners do not offer a writable login keychain, so the round-trips run only
 /// on a developer's machine.
 @Suite(.serialized, .disabled(if: ProcessInfo.processInfo.environment["CI"] != nil,
@@ -130,4 +129,3 @@ struct KeychainStoreTests {
         #expect(KeychainStore.account == "anthropic-api-key")
     }
 }
-#endif

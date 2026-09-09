@@ -1,4 +1,3 @@
-#if os(macOS)
 import AppKit
 import ApplicationServices
 import ArgumentParser
@@ -70,4 +69,3 @@ struct AXProbeCommand: AsyncParsableCommand {
         }
     }
 }
-#endif

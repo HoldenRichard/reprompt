@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// A `URLProtocol` that serves canned HTTP responses so `ClaudeClient`'s real request and
 /// response path can be exercised without a network. Stubs are keyed by URL path, so each

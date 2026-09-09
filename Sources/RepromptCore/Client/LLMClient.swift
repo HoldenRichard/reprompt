@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Which service answers a request. Each provider has its own wire format, its own model
 /// list, and its own stored credential.
@@ -193,19 +190,13 @@ public enum HTTPRetry {
         }
     }
 
-    /// Opens a connection, retrying only the connect phase, and returns the response body
-    /// as lines. Retrying after the first token would duplicate output, so only the connect
-    /// is covered.
-    ///
-    /// On Apple platforms lines arrive as the server sends them. Where Foundation has no
-    /// streaming API (Linux and Windows) the whole body is fetched first and then split, so
-    /// the parsed result is identical but not incremental.
-    public static func openLines(
+    /// Opens a streaming connection, retrying before any event has been emitted. Retrying
+    /// after the first token would duplicate output, so only the connect phase is covered.
+    public static func connect(
         session: URLSession, request: URLRequest, policy: RetryPolicy,
         check: @Sendable (URLResponse, Data) throws -> Void
-    ) async throws -> AsyncThrowingStream<String, any Error> {
-        #if canImport(Darwin)
-        let bytes = try await run(policy) {
+    ) async throws -> URLSession.AsyncBytes {
+        try await run(policy) {
             let (bytes, response) = try await session.bytes(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 var body = Data()
@@ -214,30 +205,5 @@ public enum HTTPRetry {
             }
             return bytes
         }
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await line in bytes.lines { continuation.yield(line) }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-        #else
-        let data = try await run(policy) {
-            let (data, response) = try await session.data(for: request)
-            try check(response, data)
-            return data
-        }
-        let text = String(decoding: data, as: UTF8.self)
-        return AsyncThrowingStream { continuation in
-            for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-                continuation.yield(String(line))
-            }
-            continuation.finish()
-        }
-        #endif
     }
 }

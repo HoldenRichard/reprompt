@@ -7,19 +7,9 @@ struct Harness: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "reprompt-harness",
         abstract: "Develop and evaluate the Reprompt optimizer prompt against real prompts.",
-        subcommands: subcommandTypes
+        subcommands: [HarvestCommand.self, OptimizeCommand.self, RunCommand.self, JudgeCommand.self,
+                      ModelsCommand.self, AXProbeCommand.self]
     )
-
-    /// The Accessibility probe only exists on macOS; everything else runs anywhere.
-    static var subcommandTypes: [any ParsableCommand.Type] {
-        var list: [any ParsableCommand.Type] = [
-            HarvestCommand.self, OptimizeCommand.self, RunCommand.self, JudgeCommand.self, ModelsCommand.self,
-        ]
-        #if os(macOS)
-        list.append(AXProbeCommand.self)
-        #endif
-        return list
-    }
 }
 
 // MARK: - Shared helpers

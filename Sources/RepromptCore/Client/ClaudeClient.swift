@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Raw-HTTPS client for `POST /v1/messages`. No SDK exists for Swift.
 public struct ClaudeClient: LLMClient, Sendable {
@@ -68,11 +65,11 @@ public struct ClaudeClient: LLMClient, Sendable {
                 do {
                     // Retries cover the connect only: retrying after the first token
                     // would emit the beginning of the answer twice.
-                    let lines = try await HTTPRetry.openLines(
+                    let bytes = try await HTTPRetry.connect(
                         session: session, request: urlReq, policy: retry, check: Self.check)
                     var parser = SSEParser()
                     var sawStop = false
-                    for try await line in lines {
+                    for try await line in bytes.lines {
                         try Task.checkCancellation()
                         if let event = parser.feed(line) {
                             continuation.yield(event)

@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import Testing
 @testable import RepromptCore
 
@@ -183,8 +180,6 @@ actor Collected {
         }
     }
 
-    #if canImport(Darwin)
-    // Needs incremental delivery, which only Apple's streaming URLSession provides.
     @Test func cancellingTheConsumerStopsTheUnderlyingRequest() async throws {
         let many = (1...40).map { "chunk\($0) " }
         let url = MockURLProtocol.install(.sse(sseLines(text: many), delay: 0.02))
@@ -208,5 +203,4 @@ actor Collected {
         for _ in 0..<100 where !MockURLProtocol.wasCancelled(url) { try await Task.sleep(for: .milliseconds(10)) }
         #expect(MockURLProtocol.wasCancelled(url), "the HTTP request should have been cancelled")
     }
-    #endif
 }

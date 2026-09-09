@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Groq exposes an OpenAI-compatible chat-completions endpoint, so this speaks that wire
 /// format rather than Anthropic's. Free tier, no per-token charge, and Groq's stated policy
@@ -148,11 +145,11 @@ public struct GroqClient: LLMClient, Sendable {
                 do {
                     // Retries cover the connect only: retrying after the first token
                     // would emit the beginning of the answer twice.
-                    let lines = try await HTTPRetry.openLines(
+                    let bytes = try await HTTPRetry.connect(
                         session: session, request: urlReq, policy: retry, check: Self.check)
                     var parser = OpenAISSEParser(requestedModel: model)
                     var sawDone = false
-                    for try await line in lines {
+                    for try await line in bytes.lines {
                         try Task.checkCancellation()
                         for event in parser.feed(line) {
                             continuation.yield(event)

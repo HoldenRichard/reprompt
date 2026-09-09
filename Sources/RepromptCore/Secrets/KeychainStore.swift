@@ -1,36 +1,22 @@
 import Foundation
-#if canImport(Security)
 import Security
-#endif
 
 public enum KeychainError: Error, CustomStringConvertible {
-    case status(Int32)
+    case status(OSStatus)
     case unreadable
-    /// This platform has no keychain; set the provider's environment variable instead.
-    case unavailable
-
     public var description: String {
         switch self {
-        case .status(let s):
-            #if canImport(Security)
-            return "Keychain error \(s): \(SecCopyErrorMessageString(s, nil) as String? ?? "unknown")"
-            #else
-            return "Keychain error \(s)"
-            #endif
-        case .unreadable: return "Keychain item is not UTF-8 text"
-        case .unavailable: return "No keychain on this platform; set the provider's API key environment variable."
+        case .status(let s): "Keychain error \(s): \(SecCopyErrorMessageString(s, nil) as String? ?? "unknown")"
+        case .unreadable: "Keychain item is not UTF-8 text"
         }
     }
 }
 
-/// Generic-password storage for API keys. Never logs the value. On platforms without a
-/// keychain every read returns nil and every write throws, so `APIKeyProvider` falls
-/// through to the environment variable, which is the documented path there.
+/// Generic-password storage for the API key. Never logs the value.
 public enum KeychainStore {
     public static let service = "com.holdenrichard.reprompt"
     public static let account = "anthropic-api-key"
 
-#if canImport(Security)
     static func baseQuery(service: String, account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
@@ -70,11 +56,4 @@ public enum KeychainStore {
         let status = SecItemDelete(baseQuery(service: service, account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.status(status) }
     }
-#else
-    public static func read(service: String = service, account: String = account) throws -> String? { nil }
-    public static func save(_ value: String, service: String = service, account: String = account) throws {
-        throw KeychainError.unavailable
-    }
-    public static func delete(service: String = service, account: String = account) throws {}
-#endif
 }

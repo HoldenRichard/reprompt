@@ -88,12 +88,10 @@ enum Scoreboard {
         s += "| model | cases | wins | losses | ties | net | win rate | disagree | ttfb p50 | ttfb p90 | total p50 | total p90 | opt tokens in/out | est. cost |\n"
         s += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
         for m in scores {
-            // Interpolation rather than %@: on Linux String(format:) does not bridge a Swift String.
-            let numbers = String(format: "%d | %d | %d | %d | %+d | %.0f%% | %d | %.0f ms | %.0f ms | %.0f ms | %.0f ms | %d/%d | $%.2f",
-                                 m.cases, m.wins, m.losses, m.ties, m.netPoints, m.winRate * 100, m.disagreements,
-                                 m.ttfbP50, m.ttfbP90, m.totalP50, m.totalP90,
-                                 m.optimizerInputTokens, m.optimizerOutputTokens, m.estimatedCostUSD)
-            s += "| \(m.model) | \(numbers) |\n"
+            s += String(format: "| %@ | %d | %d | %d | %d | %+d | %.0f%% | %d | %.0f ms | %.0f ms | %.0f ms | %.0f ms | %d/%d | $%.2f |\n",
+                        m.model, m.cases, m.wins, m.losses, m.ties, m.netPoints, m.winRate * 100, m.disagreements,
+                        m.ttfbP50, m.ttfbP90, m.totalP50, m.totalP90,
+                        m.optimizerInputTokens, m.optimizerOutputTokens, m.estimatedCostUSD)
         }
         s += "\nwins = optimized prompt's answer judged better. `total` is optimizer latency to last token.\n"
         for m in scores where !m.perCategory.isEmpty {
