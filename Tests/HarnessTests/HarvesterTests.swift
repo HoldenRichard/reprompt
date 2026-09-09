@@ -155,9 +155,11 @@ import Testing
 
     /// Nothing about the harvester may assume whose machine it runs on.
     @Test func harvesterSourceNamesNoParticularUser() throws {
-        let source = try String(contentsOfFile: #filePath.replacingOccurrences(
-            of: "Tests/HarnessTests/HarvesterTests.swift",
-            with: "Sources/RepromptHarness/TranscriptHarvester.swift"), encoding: .utf8)
+        // Built from URL components so it also resolves on Windows, where #filePath uses backslashes.
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let harvester = repoRoot.appendingPathComponent("Sources/RepromptHarness/TranscriptHarvester.swift")
+        let source = try String(contentsOf: harvester, encoding: .utf8)
         // A doc comment may show an example path; the CODE must not hard-code any home.
         let code = source.split(separator: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }

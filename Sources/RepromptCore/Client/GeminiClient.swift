@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Google's Generative Language API. Distinct from both other providers: the model lives in
 /// the URL path, the system prompt is its own top-level field, and structured output uses an
@@ -198,11 +201,11 @@ public struct GeminiClient: LLMClient, Sendable {
                 do {
                     // Retries cover the connect only: retrying after the first token
                     // would emit the beginning of the answer twice.
-                    let bytes = try await HTTPRetry.connect(
+                    let lines = try await HTTPRetry.openLines(
                         session: session, request: urlReq, policy: retry, check: Self.check)
                     var parser = GeminiSSEParser(requestedModel: model)
                     var finished = false
-                    for try await line in bytes.lines {
+                    for try await line in lines {
                         try Task.checkCancellation()
                         for event in parser.feed(line) {
                             continuation.yield(event)

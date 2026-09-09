@@ -1,5 +1,9 @@
-import CryptoKit
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
 
 public enum PromptName: String, CaseIterable, Sendable {
     case optimizer = "optimizer_system"
