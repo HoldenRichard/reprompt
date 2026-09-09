@@ -6,3 +6,4 @@ runs/
 *.xcodeproj
 .swiftpm/
 .DS_Store
+assets/Reprompt.iconset/

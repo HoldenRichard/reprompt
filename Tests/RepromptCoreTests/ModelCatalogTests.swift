@@ -3,16 +3,52 @@ import Testing
 @testable import RepromptCore
 
 @Suite struct ModelCatalogTests {
-    @Test func catalogListsTheOfferedModelsWithOpus5Default() {
-        #expect(ModelCatalog.all.map(\.id) == ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1"])
-        #expect(ModelCatalog.default.id == "claude-opus-5")
+    @Test func eachProviderListsItsOwnModels() {
+        #expect(ModelCatalog.models(for: .anthropic).map(\.id)
+            == ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1"])
+        #expect(ModelCatalog.models(for: .groq).map(\.id)
+            == ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "qwen/qwen3.6-27b"])
+        #expect(ModelCatalog.models(for: .gemini).map(\.id)
+            == ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-3.6-flash", "gemini-3.5-flash-lite"])
+        #expect(ModelCatalog.defaultModel(for: .anthropic).id == "claude-opus-5")
+        #expect(ModelCatalog.defaultModel(for: .gemini).id == "gemini-3.8-flash")
+        #expect(ModelCatalog.defaultModel(for: .groq).id == "openai/gpt-oss-120b")
         #expect(Set(ModelCatalog.all.map(\.id)).count == ModelCatalog.all.count, "duplicate model id")
-        for m in ModelCatalog.all {
-            #expect(!m.displayName.isEmpty)
-            #expect(m.inputPricePerMTok > 0)
-            #expect(m.outputPricePerMTok > m.inputPricePerMTok)
-            #expect(ModelCatalog.info(for: m.id)?.id == m.id)
+        for provider in Provider.allCases {
+            for m in ModelCatalog.models(for: provider) {
+                #expect(m.provider == provider, "\(m.id) is filed under the wrong provider")
+                #expect(!m.displayName.isEmpty)
+                #expect(ModelCatalog.info(for: m.id)?.id == m.id)
+            }
         }
+    }
+
+    /// Paid models must carry real prices so cost estimates mean something; free-tier models
+    /// must price at zero so a run on them never reports a spend that did not happen.
+    @Test func pricesReflectWhetherTheProviderCharges() {
+        for m in ModelCatalog.models(for: .anthropic) + ModelCatalog.models(for: .gemini) {
+            #expect(m.inputPricePerMTok > 0, "\(m.id)")
+            #expect(m.outputPricePerMTok > m.inputPricePerMTok, "\(m.id)")
+        }
+        // One rewrite is roughly 1000 in and 300 out; the default must stay cheap enough
+        // that a month of daily use fits well inside a $10 credit.
+        let perRewrite = ModelCatalog.defaultModel(for: .gemini)
+            .cost(usage: Usage(inputTokens: 1000, outputTokens: 300))
+        #expect(perRewrite < 0.005, "a rewrite costs \(perRewrite)")
+        for m in ModelCatalog.models(for: .groq) {
+            #expect(m.inputPricePerMTok == 0, "\(m.id) is on a free tier")
+            #expect(m.cost(usage: Usage(inputTokens: 1_000_000, outputTokens: 1_000_000)) == 0)
+        }
+        #expect(Provider.anthropic.isPaid)
+        #expect(!Provider.groq.isPaid)
+    }
+
+    @Test func providersKeepSeparateKeychainAccounts() {
+        #expect(Set(Provider.allCases.map(\.keychainAccount)).count == Provider.allCases.count,
+                "two providers sharing an account would overwrite each other's key")
+        #expect(Provider.anthropic.keychainAccount == "anthropic-api-key")
+        #expect(Provider.groq.keychainAccount == "groq-api-key")
+        for p in Provider.allCases { #expect(p.consoleURL.hasPrefix("https://")) }
     }
 
     /// The flags exist to stop a rejected parameter reaching the API. These are the

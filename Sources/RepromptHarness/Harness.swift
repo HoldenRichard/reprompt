@@ -7,7 +7,8 @@ struct Harness: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "reprompt-harness",
         abstract: "Develop and evaluate the Reprompt optimizer prompt against real prompts.",
-        subcommands: [HarvestCommand.self, OptimizeCommand.self, RunCommand.self, JudgeCommand.self, AXProbeCommand.self]
+        subcommands: [HarvestCommand.self, OptimizeCommand.self, RunCommand.self, JudgeCommand.self,
+                      ModelsCommand.self, AXProbeCommand.self]
     )
 }
 
@@ -46,7 +47,10 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 struct CommonModelOptions: ParsableArguments {
-    @Option(name: .long, help: "Model ID for the optimizer.") var model: String = ModelCatalog.default.id
+    @Option(name: .long, help: "Which service answers (anthropic|gemini|groq).")
+    var provider: Provider = OptimizerConfig.default.provider
+    @Option(name: .long, help: "Model ID for the optimizer. Defaults to the provider's default.")
+    var model: String?
     @Option(name: .long, help: "Effort for Quick mode (low|medium|high|xhigh|max).") var effort: Effort = .low
     @Flag(name: .long, help: "Send thinking: disabled where the model allows it.") var noThinking = false
     @Flag(name: .long, help: "Fast mode (Opus 5 only, 2x price).") var fast = false
@@ -55,15 +59,19 @@ struct CommonModelOptions: ParsableArguments {
     @Option(name: .long, help: "Directory of system prompt overrides (optimizer_system.md, ...).", completion: .directory)
     var promptsDir: String?
 
+    var resolvedModel: String { model ?? ModelCatalog.defaultModel(for: provider).id }
+
     func config(model override: String? = nil) -> OptimizerConfig {
         OptimizerConfig(
-            model: override ?? model, quickEffort: effort, clarifyEffort: .medium, maxTokens: maxTokens,
+            provider: provider, model: override ?? resolvedModel,
+            quickEffort: effort, clarifyEffort: .medium, maxTokens: maxTokens,
             quickThinking: noThinking ? .disabled : .adaptive, fastMode: fast, useFallbacks: !noFallbacks)
     }
     func prompts() throws -> PromptSet {
         try PromptLibrary.loadAll(overrideDirectory: promptsDir.map { URL(fileURLWithPath: $0) })
     }
-    func client() throws -> ClaudeClient { ClaudeClient(apiKey: try APIKeyProvider.resolve()) }
+    func client() throws -> any LLMClient { try LLMClientFactory.make(provider: provider) }
 }
 
 extension Effort: ExpressibleByArgument {}
+extension Provider: ExpressibleByArgument {}

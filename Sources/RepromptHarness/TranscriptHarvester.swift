@@ -20,10 +20,17 @@ struct HarvestOptions: Sendable {
 /// Reads Claude Code transcripts (`~/.claude/projects/<dir>/<session>.jsonl`) and extracts
 /// the prompts a human typed. Read-only: never writes under the transcript root.
 enum TranscriptHarvester {
-    static func projectName(fromDir dir: String) -> String {
+    /// Claude Code names a transcript directory after the project's absolute path with every
+    /// "/" replaced by "-": `/Users/jane/Desktop/App` becomes `-Users-jane-Desktop-App`.
+    /// The home directory is a parameter so this works for whoever cloned the repo.
+    static func projectName(fromDir dir: String, home: String = NSHomeDirectory()) -> String {
         var s = dir
-        for prefix in ["-Users-holden-Desktop-", "-Users-holden-"] where s.hasPrefix(prefix) {
-            s = String(s.dropFirst(prefix.count))
+        let encodedHome = home.replacingOccurrences(of: "/", with: "-")
+        if s.hasPrefix(encodedHome) { s = String(s.dropFirst(encodedHome.count)) }
+        // A top-level folder such as Desktop adds nothing to the project's name.
+        for folder in ["-Desktop-", "-Documents-", "-Developer-", "-Projects-", "-Code-", "-src-"]
+        where s.hasPrefix(folder) {
+            s = String(s.dropFirst(folder.count))
             break
         }
         while s.hasSuffix("-") { s = String(s.dropLast()) }
@@ -31,13 +38,10 @@ enum TranscriptHarvester {
         return s.isEmpty ? dir : s
     }
 
+    /// Categories only group prompts for sampling and scoring, so the project name serves
+    /// as the category. Edit the `category:` line in a prompt file to regroup it.
     static func category(forProject project: String) -> String {
-        let p = project.lowercased()
-        if p.contains("kabu") || p.contains("tradesim") { return "ios-app" }
-        if p.contains("resume") || p.contains("internship") { return "career-writing" }
-        if p.contains("research") || p.contains("caselaw") || p.contains("grs") || p.contains("school") { return "research" }
-        if p.contains("hackathon") { return "hackathon" }
-        return "misc"
+        project.lowercased()
     }
 
     struct RawPrompt: Sendable { var text: String; var timestamp: String? }
@@ -66,7 +70,8 @@ enum TranscriptHarvester {
     }
 
     /// Walk the transcript root, extract, de-duplicate by content hash, number sequentially.
-    static func harvest(root: URL, options: HarvestOptions = HarvestOptions()) throws -> [HarvestedPrompt] {
+    static func harvest(root: URL, options: HarvestOptions = HarvestOptions(),
+                        home: String = NSHomeDirectory()) throws -> [HarvestedPrompt] {
         let fm = FileManager.default
         let projectDirs = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
@@ -74,7 +79,7 @@ enum TranscriptHarvester {
         var seen = Set<String>()
         var result: [HarvestedPrompt] = []
         for dir in projectDirs {
-            let project = projectName(fromDir: dir.lastPathComponent)
+            let project = projectName(fromDir: dir.lastPathComponent, home: home)
             let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
                 .filter { $0.pathExtension == "jsonl" }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []

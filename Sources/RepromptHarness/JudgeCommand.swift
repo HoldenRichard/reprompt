@@ -7,7 +7,9 @@ struct JudgeCommand: AsyncParsableCommand {
         commandName: "judge", abstract: "Re-judge an existing run directory without re-generating answers.")
 
     @Option(name: .long, help: "Run directory (runs/<timestamp>).", completion: .directory) var run: String
-    @Option(name: .long) var judgeModel: String = ModelCatalog.opus5.id
+    @Option(name: .long, help: "Which service judges (anthropic|gemini|groq).")
+    var provider: Provider = OptimizerConfig.default.provider
+    @Option(name: .long) var judgeModel: String = ModelCatalog.defaultModel(for: OptimizerConfig.default.provider).id
     @Flag(name: .long) var bothOrders = false
     @Option(name: .long) var concurrency: Int = 3
     @Option(name: .long) var seed: UInt64 = 42
@@ -18,7 +20,8 @@ struct JudgeCommand: AsyncParsableCommand {
         let cases = try RunWriter.loadCases(in: runDir)
         guard !cases.isEmpty else { throw ValidationError("No case.json files under \(run)") }
         let prompts = try PromptLibrary.loadAll(overrideDirectory: promptsDir.map { URL(fileURLWithPath: $0) })
-        let judge = PairwiseJudge(client: ClaudeClient(apiKey: try APIKeyProvider.resolve()), prompt: prompts.judge, model: judgeModel)
+        let judge = PairwiseJudge(client: try LLMClientFactory.make(provider: provider),
+                                  prompt: prompts.judge, model: judgeModel)
         var rng = SplitMix64(seed: seed)
         let orders = cases.map { _ in Bool.random(using: &rng) }
         let both = bothOrders

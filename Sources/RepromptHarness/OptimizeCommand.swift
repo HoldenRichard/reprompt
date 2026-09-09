@@ -47,7 +47,10 @@ struct OptimizeCommand: AsyncParsableCommand {
                 if first == nil { first = clock.now }
                 out += t
                 FileHandle.standardOutput.write(Data(t.utf8))
-            case .messageDelta(let reason, let n): stop = reason; outputTokens = n
+            case .messageDelta(let reason, let n, let input):
+                stop = reason
+                outputTokens = n
+                if input > 0 { inputTokens = input }
             case .messageStop, .ping: break
             case .error(let e): throw e
             }

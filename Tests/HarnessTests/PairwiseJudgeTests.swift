@@ -6,7 +6,7 @@ import Testing
 @Suite struct PairwiseJudgeTests {
     func judge(_ url: URL, model: String = "claude-opus-5") -> PairwiseJudge {
         PairwiseJudge(
-            client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session()),
+            client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session(), retry: .none),
             prompt: SystemPrompt(name: .judge, text: "JUDGE-PROMPT",
                                  sha256: PromptLibrary.sha256("JUDGE-PROMPT"), source: nil),
             model: model)

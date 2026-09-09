@@ -140,7 +140,7 @@ func verdict(_ winner: String, order: String = "optimized-first") -> CaseResult.
             with: Data(contentsOf: root.appendingPathComponent("run.json"))) as? [String: Any]
         #expect(json?["promptCount"] as? Int == 3)
         #expect(json?["gitRevision"] as? String == "abc1234")
-        #expect((json?["config"] as? [String: Any])?["model"] as? String == ModelCatalog.default.id)
+        #expect((json?["config"] as? [String: Any])?["model"] as? String == OptimizerConfig.default.model)
         // The exact prompt text used is frozen alongside the results.
         let frozen = root.appendingPathComponent("prompts/optimizer_system.md")
         #expect(try String(contentsOf: frozen, encoding: .utf8) == "OPT")

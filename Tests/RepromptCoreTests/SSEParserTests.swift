@@ -30,7 +30,7 @@ import Testing
             .blockStart(index: 0, type: "text", fallbackTo: nil),
             .ping,
             .textDelta("Hel"), .textDelta("lo"),
-            .messageDelta(stopReason: .endTurn, outputTokens: 12),
+            .messageDelta(stopReason: .endTurn, outputTokens: 12, inputTokens: 0),
             .messageStop,
         ])
     }
@@ -57,14 +57,14 @@ import Testing
             #"data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
         ]
         #expect(events(lines) == [
-            .messageDelta(stopReason: .refusal, outputTokens: 0),
+            .messageDelta(stopReason: .refusal, outputTokens: 0, inputTokens: 0),
             .error(.stream(type: "overloaded_error", message: "Overloaded")),
         ])
     }
 
     @Test func unknownStopReasonIsPreserved() {
         let lines = [#"data: {"type":"message_delta","delta":{"stop_reason":"new_thing"},"usage":{"output_tokens":3}}"#]
-        #expect(events(lines) == [.messageDelta(stopReason: .unknown("new_thing"), outputTokens: 3)])
+        #expect(events(lines) == [.messageDelta(stopReason: .unknown("new_thing"), outputTokens: 3, inputTokens: 0)])
     }
 
     @Test func unknownEventTypesAreIgnoredRatherThanFatal() {
@@ -80,7 +80,7 @@ import Testing
     /// whole stream, which is why `Usage` defaults absent counts to zero.
     @Test func partialUsageObjectsDecodeRatherThanKillingTheStream() {
         #expect(events([#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"#])
-            == [.messageDelta(stopReason: .endTurn, outputTokens: 7)])
+            == [.messageDelta(stopReason: .endTurn, outputTokens: 7, inputTokens: 0)])
         // message_start whose usage omits output_tokens entirely.
         #expect(events([#"data: {"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"claude-sonnet-5","content":[],"usage":{"input_tokens":9}}}"#])
             == [.messageStart(model: "claude-sonnet-5", inputTokens: 9)])
@@ -91,7 +91,7 @@ import Testing
 
     @Test func messageDeltaWithoutUsageReportsZero() {
         #expect(events([#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#])
-            == [.messageDelta(stopReason: .endTurn, outputTokens: 0)])
+            == [.messageDelta(stopReason: .endTurn, outputTokens: 0, inputTokens: 0)])
     }
 
     @Test func toleratesCRLFLineEndings() {

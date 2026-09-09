@@ -19,7 +19,7 @@ struct JudgeVerdict: Codable, Sendable {
 /// Blind pairwise comparison. The judge sees the original request and two answers; it never
 /// sees the optimized prompt. The caller decides which answer is A and records it.
 struct PairwiseJudge: Sendable {
-    var client: ClaudeClient
+    var client: any LLMClient
     var prompt: SystemPrompt
     var model: String
 
@@ -37,10 +37,9 @@ struct PairwiseJudge: Sendable {
         \(b)
         </response_b>
         """
-        let req = RequestBuilder.build(
-            model: model, system: prompt.text, user: user, maxTokens: 1024, effort: .medium,
-            thinking: .adaptive, fastMode: false, useFallbacks: true,
-            format: OutputFormat(schema: JudgeVerdict.jsonSchema), stream: false)
+        let req = ChatRequest(
+            model: model, system: prompt.text, user: user, maxTokens: 1024, stream: false,
+            jsonSchema: JudgeVerdict.jsonSchema, effort: .medium, thinking: .adaptive)
         let resp = try await client.send(req)
         if resp.stopReason == .refusal {
             throw ClaudeError.refusal(category: resp.stopDetails?.category, explanation: resp.stopDetails?.explanation)

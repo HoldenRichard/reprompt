@@ -59,19 +59,19 @@ import Testing
 
     @Test func harvestDeduplicatesOnNormalisedText() throws {
         let root = tempRoot()
-        let proj = root.appendingPathComponent("-Users-holden-Desktop-Resume")
+        let proj = root.appendingPathComponent("-Users-example-Desktop-Resume")
         try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try fixture.write(to: proj.appendingPathComponent("s1.jsonl"))
         try fixture.write(to: proj.appendingPathComponent("s2.jsonl"))
 
-        let got = try TranscriptHarvester.harvest(root: root)
+        let got = try TranscriptHarvester.harvest(root: root, home: "/Users/example")
         // The case- and whitespace-variant duplicate collapses, and so does the second file.
         #expect(got.count == 2)
         #expect(got.map(\.id) == [1, 2])
         #expect(got[0].project == "Resume")
-        #expect(got[0].category == "career-writing")
-        #expect(got[0].sessionFile == "-Users-holden-Desktop-Resume/s1.jsonl")
+        #expect(got[0].category == "resume")
+        #expect(got[0].sessionFile == "-Users-example-Desktop-Resume/s1.jsonl")
         #expect(Set(got.map(\.sha256)).count == 2)
         #expect(got[0].chars == got[0].text.count)
     }
@@ -83,19 +83,19 @@ import Testing
 
     @Test func harvestIsDeterministicAcrossRuns() throws {
         let root = tempRoot()
-        for name in ["-Users-holden-Kabu", "-Users-holden-Desktop-Resume", "-Users-holden-fix-github"] {
+        for name in ["-Users-example-App", "-Users-example-Desktop-Resume", "-Users-example-website"] {
             let dir = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try line("A unique prompt for \(name) that is comfortably longer than the minimum length filter.")
                 .write(to: dir.appendingPathComponent("a.jsonl"))
         }
         defer { try? FileManager.default.removeItem(at: root) }
-        let first = try TranscriptHarvester.harvest(root: root)
-        let second = try TranscriptHarvester.harvest(root: root)
+        let first = try TranscriptHarvester.harvest(root: root, home: "/Users/example")
+        let second = try TranscriptHarvester.harvest(root: root, home: "/Users/example")
         #expect(first == second, "ids and ordering must not depend on directory enumeration order")
-        // Directories are walked in sorted raw-name order, so -Users-holden-Desktop-Resume
-        // comes before -Users-holden-Kabu, which comes before -Users-holden-fix-github.
-        #expect(first.map(\.project) == ["Resume", "Kabu", "fix-github"])
+        // Directories are walked in sorted raw-name order: "-Users-example-App" sorts before
+        // "-Users-example-Desktop-Resume", which sorts before "-Users-example-website".
+        #expect(first.map(\.project) == ["App", "Resume", "website"])
         #expect(first.map(\.id) == [1, 2, 3], "ids are assigned in walk order")
     }
 
@@ -103,28 +103,28 @@ import Testing
     /// globally, not per project.
     @Test func identicalPromptsInDifferentProjectsCollapseToOne() throws {
         let root = tempRoot()
-        for name in ["-Users-holden-Kabu", "-Users-holden-Desktop-Resume"] {
+        for name in ["-Users-example-App", "-Users-example-Desktop-Resume"] {
             let dir = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try line("The very same prompt text, long enough to pass the minimum length filter easily.")
                 .write(to: dir.appendingPathComponent("a.jsonl"))
         }
         defer { try? FileManager.default.removeItem(at: root) }
-        let got = try TranscriptHarvester.harvest(root: root)
+        let got = try TranscriptHarvester.harvest(root: root, home: "/Users/example")
         #expect(got.count == 1)
-        #expect(got[0].project == "Resume", "the first project in walk order keeps it")
+        #expect(got[0].project == "App", "the first project in walk order keeps it")
     }
 
     @Test func nonJSONLFilesAndEmptyDirectoriesAreSkipped() throws {
         let root = tempRoot()
-        let dir = root.appendingPathComponent("-Users-holden-Kabu")
+        let dir = root.appendingPathComponent("-Users-example-App")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("-Users-holden-Empty"),
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("-Users-example-Empty"),
                                                 withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try Data("ignore me".utf8).write(to: dir.appendingPathComponent("notes.txt"))
         try fixture.write(to: dir.appendingPathComponent("s.jsonl"))
-        let got = try TranscriptHarvester.harvest(root: root)
+        let got = try TranscriptHarvester.harvest(root: root, home: "/Users/example")
         #expect(got.count == 2)
         #expect(got.allSatisfy { $0.sessionFile.hasSuffix(".jsonl") })
     }
@@ -133,7 +133,7 @@ import Testing
         let root = tempRoot()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        #expect(try TranscriptHarvester.harvest(root: root).isEmpty)
+        #expect(try TranscriptHarvester.harvest(root: root, home: "/Users/example").isEmpty)
     }
 
     @Test func aMissingRootIsAnError() {
@@ -142,25 +142,30 @@ import Testing
         }
     }
 
-    @Test func projectNamesStripTheEncodedHomePath() {
-        #expect(TranscriptHarvester.projectName(fromDir: "-Users-holden-Kabu-") == "Kabu")
-        #expect(TranscriptHarvester.projectName(fromDir: "-Users-holden-Desktop-ai-development-research") == "ai-development-research")
-        #expect(TranscriptHarvester.projectName(fromDir: "-Users-holden-Hackathons-HackathonSF26") == "Hackathons-HackathonSF26")
-        #expect(TranscriptHarvester.projectName(fromDir: "-Users-holden-") == "-Users-holden-")
-        #expect(TranscriptHarvester.projectName(fromDir: "weird") == "weird")
+    @Test func projectNamesStripTheEncodedHomePathForAnyUser() {
+        #expect(TranscriptHarvester.projectName(fromDir: "-Users-example-App-", home: "/Users/example") == "App")
+        #expect(TranscriptHarvester.projectName(fromDir: "-Users-example-Desktop-research-notes", home: "/Users/example") == "research-notes")
+        #expect(TranscriptHarvester.projectName(fromDir: "-Users-example-Hackathons-Spring26", home: "/Users/example") == "Hackathons-Spring26")
+        #expect(TranscriptHarvester.projectName(fromDir: "-Users-example-", home: "/Users/example") == "-Users-example-")
+        #expect(TranscriptHarvester.projectName(fromDir: "weird", home: "/Users/example") == "weird")
+        // A different user's home must be stripped just the same.
+        #expect(TranscriptHarvester.projectName(fromDir: "-home-jane-Code-cli", home: "/home/jane") == "cli")
+        #expect(TranscriptHarvester.projectName(fromDir: "-Users-jane-Documents-Thesis", home: "/Users/jane") == "Thesis")
     }
 
-    @Test func categoriesCoverTheKnownProjectsAndDefaultToMisc() {
-        let cases: [(String, String)] = [
-            ("Kabu", "ios-app"), ("Kabu-TradeSim-iOS", "ios-app"),
-            ("Resume", "career-writing"), ("Internships", "career-writing"),
-            ("ai-development-research", "research"), ("caselaw", "research"), ("School-GRS-1105", "research"),
-            ("HackathonSF26", "hackathon"),
-            ("fix-github", "misc"), ("Side-hustles-Detailing", "misc"),
-        ]
-        for (project, category) in cases {
-            #expect(TranscriptHarvester.category(forProject: project) == category, "\(project)")
-        }
+    /// Nothing about the harvester may assume whose machine it runs on.
+    @Test func harvesterSourceNamesNoParticularUser() throws {
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(
+            of: "Tests/HarnessTests/HarvesterTests.swift",
+            with: "Sources/RepromptHarness/TranscriptHarvester.swift"), encoding: .utf8)
+        #expect(!source.contains("-Users-holden"))
+        #expect(!source.lowercased().contains("kabu"))
+    }
+
+    @Test func categoryIsTheLowercasedProjectName() {
+        #expect(TranscriptHarvester.category(forProject: "Resume") == "resume")
+        #expect(TranscriptHarvester.category(forProject: "research-notes") == "research-notes")
+        #expect(TranscriptHarvester.category(forProject: "App") == "app")
     }
 }
 

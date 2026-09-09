@@ -27,8 +27,11 @@ final class FakeInserter: TextInserting {
     private(set) var calls: [Call] = []
     var error: (any Error)?
     var delay: Duration = .zero
+    /// Fires as the write begins, so tests can assert what happened before it.
+    var onReplace: (() -> Void)?
 
     func replace(_ selection: Selection, with text: String, preferAccessibility: Bool) async throws {
+        onReplace?()
         calls.append(Call(text: text, preferAccessibility: preferAccessibility))
         if delay > .zero { try await Task.sleep(for: delay) }
         if let error { throw error }
@@ -48,7 +51,7 @@ func scratchSettings(_ configure: (AppSettings) -> Void = { _ in }) -> (AppSetti
 @MainActor
 func stubOptimizer(_ url: URL, config: OptimizerConfig) -> PromptOptimizer {
     PromptOptimizer(
-        client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session()),
+        client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session(), retry: .none),
         config: config,
         prompts: PromptSet(
             optimizer: SystemPrompt(name: .optimizer, text: "O", sha256: "o", source: nil),
@@ -73,4 +76,11 @@ func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -
 /// A message whose single text block is the given JSON, for the Clarify questions step.
 func questionsResponse(_ json: String) -> MockURLProtocol.Stub {
     .json(#"{"id":"m","type":"message","role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":\#(jsonQuoted(json))}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":10}}"#)
+}
+
+/// Main-actor twin of `errorFrom`: the app's types are main-actor isolated, so a closure
+/// that touches them cannot be handed to the nonisolated helper.
+@MainActor
+func errorOnMain<T>(_ body: @MainActor () async throws -> T) async -> (any Error)? {
+    do { _ = try await body(); return nil } catch { return error }
 }

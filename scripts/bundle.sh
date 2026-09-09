@@ -18,6 +18,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Reprompt"
 cp scripts/Info.plist "$APP/Contents/Info.plist"
+cp assets/Reprompt.icns "$APP/Contents/Resources/Reprompt.icns"
 echo -n "APPL????" > "$APP/Contents/PkgInfo"
 
 IDENTITY="${REPROMPT_SIGN_IDENTITY:-}"

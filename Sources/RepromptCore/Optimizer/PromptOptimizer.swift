@@ -21,11 +21,11 @@ public struct ClarifyResult: Sendable, Equatable {
 
 /// The optimizer: quick rewrite, clarifying questions, and the answers-informed rewrite.
 public struct PromptOptimizer: Sendable {
-    public let client: ClaudeClient
+    public let client: any LLMClient
     public var config: OptimizerConfig
     public let prompts: PromptSet
 
-    public init(client: ClaudeClient, config: OptimizerConfig = .default, prompts: PromptSet) {
+    public init(client: any LLMClient, config: OptimizerConfig = .default, prompts: PromptSet) {
         self.client = client
         self.config = config
         self.prompts = prompts
@@ -45,25 +45,24 @@ public struct PromptOptimizer: Sendable {
         return s
     }
 
-    public func rewriteRequest(original: String, answers: [ClarifyAnswer], stream: Bool) -> MessageRequest {
+    public func rewriteRequest(original: String, answers: [ClarifyAnswer], stream: Bool) -> ChatRequest {
         let system = answers.isEmpty ? prompts.optimizer : prompts.clarifyFinal
         let effort = answers.isEmpty ? config.quickEffort : config.clarifyEffort
-        return RequestBuilder.build(
+        return ChatRequest(
             model: config.model, system: system.text,
             user: Self.userMessage(original: original, answers: answers),
-            maxTokens: config.maxTokens, effort: effort,
+            maxTokens: config.maxTokens, stream: stream, jsonSchema: nil, effort: effort,
             thinking: config.quickThinking, fastMode: config.fastMode,
-            useFallbacks: config.useFallbacks, stream: stream)
+            useFallbacks: config.useFallbacks)
     }
 
-    public func questionsRequest(original: String) -> MessageRequest {
-        RequestBuilder.build(
+    public func questionsRequest(original: String) -> ChatRequest {
+        ChatRequest(
             model: config.model, system: prompts.clarifyQuestions.text,
             user: Self.userMessage(original: original, answers: []),
-            maxTokens: 1024, effort: config.clarifyEffort,
-            thinking: .adaptive, fastMode: config.fastMode,
-            useFallbacks: config.useFallbacks,
-            format: OutputFormat(schema: ClarifyQuestions.jsonSchema), stream: false)
+            maxTokens: 1024, stream: false, jsonSchema: ClarifyQuestions.jsonSchema,
+            effort: config.clarifyEffort, thinking: .adaptive, fastMode: config.fastMode,
+            useFallbacks: config.useFallbacks)
     }
 
     // MARK: Calls
@@ -89,7 +88,12 @@ public struct PromptOptimizer: Sendable {
             case .textDelta(let t):
                 if firstToken == nil { firstToken = clock.now }
                 text += t
-            case .messageDelta(let reason, let out): stop = reason; outputTokens = out
+            case .messageDelta(let reason, let out, let input):
+                stop = reason
+                outputTokens = out
+                // Providers that only report the prompt size at the end must not be
+                // overwritten by the zero that arrived at the start.
+                if input > 0 { inputTokens = input }
             case .messageStop, .ping: break
             case .error(let e): throw e
             }

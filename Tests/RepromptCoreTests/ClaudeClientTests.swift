@@ -16,7 +16,7 @@ actor Collected {
 
 @Suite struct ClaudeClientSendTests {
     func client(_ url: URL, key: String = "sk-test-key") -> ClaudeClient {
-        ClaudeClient(apiKey: key, baseURL: url, session: MockURLProtocol.session())
+        ClaudeClient(apiKey: key, baseURL: url, session: MockURLProtocol.session(), retry: .none)
     }
 
     var okResponse: String {
@@ -109,7 +109,7 @@ actor Collected {
 
 @Suite struct ClaudeClientStreamTests {
     func client(_ url: URL) -> ClaudeClient {
-        ClaudeClient(apiKey: "sk-test", baseURL: url, session: MockURLProtocol.session())
+        ClaudeClient(apiKey: "sk-test", baseURL: url, session: MockURLProtocol.session(), retry: .none)
     }
     var request: MessageRequest {
         MessageRequest(model: "claude-opus-5", maxTokens: 100, messages: [.user("x")], stream: false)
@@ -133,7 +133,7 @@ actor Collected {
         let events = try await drain(url)
         #expect(events.first == .messageStart(model: "claude-opus-5", inputTokens: 25))
         #expect(events.contains(.blockStart(index: 0, type: "text", fallbackTo: nil)))
-        #expect(events.contains(.messageDelta(stopReason: .endTurn, outputTokens: 12)))
+        #expect(events.contains(.messageDelta(stopReason: .endTurn, outputTokens: 12, inputTokens: 0)))
         #expect(events.last == .messageStop)
         let text = events.compactMap { if case .textDelta(let t) = $0 { t } else { nil } }.joined()
         #expect(text == "Hello world")

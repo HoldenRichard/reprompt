@@ -8,14 +8,15 @@ struct RunCommand: AsyncParsableCommand {
         abstract: "For each prompt x model: optimize, answer both versions, judge blind, and score.")
 
     @Option(name: .long, help: "Prompt corpus directory.", completion: .directory) var prompts: String = "prompts/curated"
-    @Option(name: .long, help: "Comma-separated optimizer model IDs.") var models: String = "claude-opus-5,claude-sonnet-5"
+    @Option(name: .long, help: "Comma-separated optimizer model IDs. Defaults to the provider's default.")
+    var models: String?
     @Option(name: .long, help: "Runs root; a timestamped directory is created inside.", completion: .directory) var out: String = "runs"
     @Option(name: .long, help: "Random stratified sample of N prompts.") var sample: Int?
     @Option(name: .long, help: "First N prompts.") var limit: Int?
     @Option(name: .long, help: "Only this category.") var category: String?
     @Flag(name: .long, help: "Run the blind pairwise judge.") var judge = false
     @Flag(name: .long, help: "Judge both A/B orders; disagreement counts as a tie.") var bothOrders = false
-    @Option(name: .long) var judgeModel: String = ModelCatalog.opus5.id
+    @Option(name: .long) var judgeModel: String = ModelCatalog.defaultModel(for: OptimizerConfig.default.provider).id
     @Option(name: .long) var concurrency: Int = 3
     @Option(name: .long, help: "max_tokens for the two answer calls.") var answerMaxTokens: Int = 3000
     @Flag(name: .long, help: "Exercise the Clarify path unattended (questions recorded, no answers).") var clarify = false
@@ -23,7 +24,8 @@ struct RunCommand: AsyncParsableCommand {
     @OptionGroup var common: CommonModelOptions
 
     mutating func run() async throws {
-        let modelIDs = models.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let modelIDs = (models ?? common.resolvedModel)
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         var corpus = try PromptCorpus.load(directory: URL(fileURLWithPath: prompts))
         if let category { corpus = corpus.filter { $0.category == category } }
         var rng = SplitMix64(seed: seed)
@@ -77,7 +79,7 @@ struct RunCommand: AsyncParsableCommand {
     }
 
     static func runCase(
-        prompt: CorpusPrompt, model: String, optimizedFirst: Bool, client: ClaudeClient, promptSet: PromptSet,
+        prompt: CorpusPrompt, model: String, optimizedFirst: Bool, client: any LLMClient, promptSet: PromptSet,
         common: CommonModelOptions, answerMaxTokens: Int, clarify: Bool, judge: PairwiseJudge?, bothOrders: Bool
     ) async -> CaseResult {
         var c = CaseResult(promptID: prompt.id, category: prompt.category, project: prompt.project, model: model, original: prompt.text)
@@ -117,10 +119,10 @@ struct RunCommand: AsyncParsableCommand {
         return c
     }
 
-    static func answer(client: ClaudeClient, model: String, text: String, maxTokens: Int) async throws -> CaseResult.Call {
-        let req = RequestBuilder.build(
-            model: model, system: nil, user: text, maxTokens: maxTokens, effort: .medium,
-            thinking: .adaptive, fastMode: false, useFallbacks: true, stream: false)
+    static func answer(client: any LLMClient, model: String, text: String, maxTokens: Int) async throws -> CaseResult.Call {
+        let req = ChatRequest(
+            model: model, system: nil, user: text, maxTokens: maxTokens, stream: false,
+            effort: .medium, thinking: .adaptive)
         let clock = ContinuousClock()
         let start = clock.now
         let r = try await client.send(req)

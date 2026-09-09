@@ -19,7 +19,7 @@ struct MenuBarView: View {
         Divider()
         Menu("Model: \(settings.model.displayName)") {
             Picker("Model", selection: $settings.modelID) {
-                ForEach(ModelCatalog.all) { m in Text(m.displayName).tag(m.id) }
+                ForEach(ModelCatalog.models(for: settings.provider)) { m in Text(m.displayName).tag(m.id) }
             }
             .pickerStyle(.inline)
         }

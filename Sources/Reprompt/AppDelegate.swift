@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        settings.applyAppearance()
         accessibilityGranted = AccessibilityPermission.requestIfNeeded()
         hotkeys.handler = { [weak self] in self?.hotkeyPressed() }
         registerHotkey(settings.hotkey)
@@ -54,13 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hotkeyPressed() {
         if let s = session { s.dismiss(); return }
         refreshPermissions()
-        let s = RepromptSession(mode: settings.mode, settings: settings)
+        let s = RepromptSession(
+            mode: settings.mode, settings: settings,
+            reader: SelectionReader(selectAllWhenEmpty: settings.selectAllWhenEmpty))
         s.onFinished = { [weak self] in
             self?.overlay.dismiss()
             self?.session = nil
         }
         s.onReadyForKeyboard = { [weak self] in self?.overlay.takeKeyFocus() }
         s.onNeedsActivation = { [weak self] in self?.overlay.activateForTextInput() }
+        s.onWillInsertText = { [weak self] in self?.overlay.relinquishFocusForInsertion() }
+        s.onInsertFailed = { [weak self] in self?.overlay.reveal() }
         session = s
         overlay.show(session: s, position: settings.overlayPosition)
         s.start()

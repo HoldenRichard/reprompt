@@ -15,6 +15,9 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         var transportError: (any Error)?
         /// True once `stopLoading` ran, i.e. the request was cancelled.
         var stopped = false
+        /// Serve this many transient failures before the real response, to exercise retry.
+        var transientFailures = 0
+        var transientStatus = 503
 
         static func json(_ s: String, status: Int = 200) -> Stub {
             Stub(status: status, chunks: [Data(s.utf8)])
@@ -39,22 +42,40 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             requests[path] = []
             bodies[path] = []
         }
+        /// Longest registered prefix wins, so a client that appends to the base URL still
+        /// finds its stub.
+        private func key(for path: String) -> String? {
+            stubs.keys.filter { path.hasPrefix($0) }.max { $0.count < $1.count }
+        }
         func stub(for path: String) -> Stub? {
             lock.lock(); defer { lock.unlock() }
-            return stubs[path]
+            return key(for: path).flatMap { stubs[$0] }
+        }
+        /// A new request on a path is not the cancelled one that came before it.
+        func beginRequest(_ path: String) {
+            lock.lock(); defer { lock.unlock() }
+            if let k = key(for: path) { stubs[k]?.stopped = false }
+        }
+        /// Returns true when this request should be served a transient failure.
+        func consumeTransientFailure(_ path: String) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard let k = key(for: path), let n = stubs[k]?.transientFailures, n > 0 else { return false }
+            stubs[k]?.transientFailures = n - 1
+            return true
         }
         func markStopped(_ path: String) {
             lock.lock(); defer { lock.unlock() }
-            stubs[path]?.stopped = true
+            if let k = key(for: path) { stubs[k]?.stopped = true }
         }
         func wasStopped(_ path: String) -> Bool {
             lock.lock(); defer { lock.unlock() }
-            return stubs[path]?.stopped ?? false
+            return key(for: path).flatMap { stubs[$0]?.stopped } ?? false
         }
         func record(_ request: URLRequest, body: Data, for path: String) {
             lock.lock(); defer { lock.unlock() }
-            requests[path, default: []].append(request)
-            bodies[path, default: []].append(body)
+            guard let k = key(for: path) else { return }
+            requests[k, default: []].append(request)
+            bodies[k, default: []].append(body)
         }
         func requests(for path: String) -> [URLRequest] {
             lock.lock(); defer { lock.unlock() }
@@ -112,8 +133,18 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
+        Self.registry.beginRequest(url.path)
         Self.registry.record(request, body: Self.readBody(request), for: url.path)
 
+        if Self.registry.consumeTransientFailure(url.path) {
+            let r = HTTPURLResponse(url: url, statusCode: stub.transientStatus, httpVersion: "HTTP/1.1",
+                                    headerFields: ["Content-Type": "application/json"])!
+            client?.urlProtocol(self, didReceive: r, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(
+                #"{"error":{"code":503,"status":"UNAVAILABLE","message":"overloaded","type":"server_error"}}"#.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         if let error = stub.transportError {
             client?.urlProtocol(self, didFailWithError: error)
             return

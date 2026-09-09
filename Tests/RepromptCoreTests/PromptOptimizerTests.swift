@@ -40,10 +40,10 @@ func stubPrompts() -> PromptSet {
     @Test func quickRewriteUsesTheOptimizerPromptAndQuickEffort() {
         let r = optimizer(OptimizerConfig(quickEffort: .low, clarifyEffort: .max))
             .rewriteRequest(original: "x", answers: [], stream: true)
-        #expect(r.system?.first?.text == "OPTIMIZER-PROMPT")
-        #expect(r.outputConfig?.effort == .low)
+        #expect(r.system == "OPTIMIZER-PROMPT")
+        #expect(r.effort == .low)
         #expect(r.stream)
-        #expect(r.outputConfig?.format == nil, "the rewrite is free text, not structured output")
+        #expect(r.jsonSchema == nil, "the rewrite is free text, not structured output")
     }
 
     @Test func answeredRewriteSwitchesToTheClarifyFinalPromptAndEffort() {
@@ -51,24 +51,43 @@ func stubPrompts() -> PromptSet {
             .rewriteRequest(original: "x",
                             answers: [ClarifyAnswer(questionID: "q", question: "Q?", answer: "A")],
                             stream: false)
-        #expect(r.system?.first?.text == "CLARIFY-FINAL-PROMPT")
-        #expect(r.outputConfig?.effort == .max)
-        #expect(r.messages.first?.content.contains("Q: Q?\nA: A") == true)
+        #expect(r.system == "CLARIFY-FINAL-PROMPT")
+        #expect(r.effort == .max)
+        #expect(r.user.contains("Q: Q?\nA: A"))
+        #expect(!r.stream)
     }
 
     @Test func questionsRequestIsStructuredNonStreamingAndBounded() {
         let r = optimizer(OptimizerConfig(clarifyEffort: .medium)).questionsRequest(original: "x")
-        #expect(r.system?.first?.text == "QUESTIONS-PROMPT")
+        #expect(r.system == "QUESTIONS-PROMPT")
         #expect(r.maxTokens == 1024)
         #expect(!r.stream)
-        #expect(r.outputConfig?.effort == .medium)
-        #expect(r.outputConfig?.format?.type == "json_schema")
-        #expect(r.outputConfig?.format?.schema == ClarifyQuestions.jsonSchema)
+        #expect(r.effort == .medium)
+        #expect(r.jsonSchema == ClarifyQuestions.jsonSchema)
     }
 
-    @Test func theSystemPromptIsMarkedCacheableSoTheStablePrefixIsReused() {
-        let r = optimizer().rewriteRequest(original: "x", answers: [], stream: true)
-        #expect(r.system?.first?.cacheControl?.type == "ephemeral")
+    /// The optimizer emits a provider-neutral request; the Anthropic client is what marks the
+    /// system prompt cacheable, so that is asserted at the translation boundary.
+    @Test func theAnthropicTranslationMarksTheSystemPromptCacheable() {
+        let chat = optimizer().rewriteRequest(original: "x", answers: [], stream: true)
+        let message = ClaudeClient(apiKey: "k").messageRequest(for: chat)
+        #expect(message.system?.first?.text == "OPTIMIZER-PROMPT")
+        #expect(message.system?.first?.cacheControl?.type == "ephemeral")
+        #expect(message.messages.first?.content == chat.user)
+        #expect(message.stream)
+    }
+
+    @Test func theAnthropicTranslationStillAppliesPerModelCapabilityFlags() {
+        let client = ClaudeClient(apiKey: "k")
+        let haiku = client.messageRequest(for: ChatRequest(
+            model: "claude-haiku-4-5", user: "u", maxTokens: 10, effort: .low, thinking: .adaptive))
+        #expect(haiku.outputConfig == nil, "effort is rejected on Haiku")
+        #expect(haiku.thinking == nil)
+
+        let fable = client.messageRequest(for: ChatRequest(
+            model: "claude-fable-5-1", user: "u", maxTokens: 10, effort: .low, thinking: .disabled))
+        #expect(fable.thinking == nil, "thinking is always on for Fable 5.1")
+        #expect(fable.outputConfig?.effort == .low)
     }
 
     @Test func configuredModelAndTokenBudgetReachTheRequest() {
@@ -81,7 +100,7 @@ func stubPrompts() -> PromptSet {
 
 @Suite struct PromptOptimizerCallTests {
     func optimizer(_ url: URL, _ config: OptimizerConfig = .default) -> PromptOptimizer {
-        PromptOptimizer(client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session()),
+        PromptOptimizer(client: ClaudeClient(apiKey: "k", baseURL: url, session: MockURLProtocol.session(), retry: .none),
                         config: config, prompts: stubPrompts())
     }
 
@@ -90,7 +109,7 @@ func stubPrompts() -> PromptSet {
                                                         inputTokens: 40, outputTokens: 9)))
         let r = try await optimizer(url).optimize("original")
         #expect(r.text == "Rewrite this prompt.")
-        #expect(r.requestedModel == ModelCatalog.default.id)
+        #expect(r.requestedModel == OptimizerConfig.default.model)
         #expect(r.servedModel == "claude-opus-5")
         #expect(r.stopReason == .endTurn)
         #expect(r.usage.inputTokens == 40)

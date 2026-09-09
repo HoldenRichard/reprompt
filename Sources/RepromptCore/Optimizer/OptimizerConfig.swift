@@ -7,6 +7,7 @@ public enum ThinkingMode: String, Codable, Sendable, CaseIterable {
 /// Everything that shapes an optimizer request. Serialized into harness run records and
 /// mirrored by the app's settings.
 public struct OptimizerConfig: Codable, Sendable, Equatable {
+    public var provider: Provider
     public var model: String
     public var quickEffort: Effort
     public var clarifyEffort: Effort
@@ -16,7 +17,11 @@ public struct OptimizerConfig: Codable, Sendable, Equatable {
     public var useFallbacks: Bool
 
     public init(
-        model: String = ModelCatalog.default.id,
+        // Groq by default: it does not train on inputs on any tier, which matters because
+        // this tool reads whatever the user happened to have selected. Gemini's equivalent
+        // guarantee is paid-tier only, and a free-tier key does not get it.
+        provider: Provider = .groq,
+        model: String = ModelCatalog.defaultModel(for: .groq).id,
         quickEffort: Effort = .low,
         clarifyEffort: Effort = .medium,
         maxTokens: Int = 2048,
@@ -24,6 +29,7 @@ public struct OptimizerConfig: Codable, Sendable, Equatable {
         fastMode: Bool = false,
         useFallbacks: Bool = true
     ) {
+        self.provider = provider
         self.model = model
         self.quickEffort = quickEffort
         self.clarifyEffort = clarifyEffort

@@ -8,7 +8,7 @@ struct RepromptApp: App {
         MenuBarExtra {
             MenuBarView(settings: delegate.settings, accessibilityGranted: delegate.accessibilityGranted)
         } label: {
-            Image(systemName: delegate.settings.mode == .quick ? "text.badge.checkmark" : "text.badge.plus")
+            Image(nsImage: MenubarIcon.image(for: delegate.settings.mode))
         }
         Settings {
             SettingsView(settings: delegate.settings, hotkeyError: delegate.hotkeyError) {

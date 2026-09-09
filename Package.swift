@@ -32,6 +32,12 @@ let package = Package(
         .executableTarget(
             name: "Reprompt",
             dependencies: ["RepromptCore"],
+            resources: [
+                // Compiled in rather than bundled: a hand-assembled .app has no resource
+                // bundle for Bundle.module to find, and a miss there is a crash.
+                .embedInCode("Resources/menubar_quick.png"),
+                .embedInCode("Resources/menubar_clarify.png"),
+            ],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(name: "RepromptCoreTests", dependencies: ["RepromptCore"]),

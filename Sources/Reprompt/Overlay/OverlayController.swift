@@ -28,6 +28,18 @@ final class OverlayController {
         panel?.contentView = nil
     }
 
+    /// Hides the panel so keyboard focus returns to the target application, without
+    /// discarding its contents: if the write fails the session still has somewhere to say so.
+    func relinquishFocusForInsertion() {
+        panel?.orderOut(nil)
+    }
+
+    /// Brings a hidden panel back, used when a write failed after the panel was hidden.
+    func reveal() {
+        panel?.orderFrontRegardless()
+        panel?.makeKeyAndOrderFront(nil)
+    }
+
     /// Edit and Clarify need real text focus, which a non-activating panel cannot always give.
     func activateForTextInput() {
         NSApp.activate()

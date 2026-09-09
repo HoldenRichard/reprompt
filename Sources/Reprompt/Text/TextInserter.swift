@@ -54,9 +54,11 @@ struct TextInserter: TextInserting {
             pb.setString(text, forType: .string)
             throw InsertError.cannotPostEvents
         }
-        if let app, !app.isActive {
+        // Always activate: `isActive` can be true for the target while Reprompt's panel
+        // still owns key focus, and the paste follows focus rather than activation.
+        if let app {
             app.activate()
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(150))
         }
         let snapshot = PasteboardSnapshot.capture(pb)
         // Restore even if this task is cancelled mid-paste; without the defer, pressing

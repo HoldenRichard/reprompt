@@ -40,6 +40,12 @@ final class RepromptSession {
     var onReadyForKeyboard: (() -> Void)?
     /// Called when Reprompt itself must come forward for text entry.
     var onNeedsActivation: (() -> Void)?
+    /// Called immediately before the rewrite is written back. The overlay must give up key
+    /// focus first: a synthetic Cmd+V goes to whatever holds focus, so with the panel still
+    /// key the paste lands on Reprompt itself and the user sees nothing happen.
+    var onWillInsertText: (() -> Void)?
+    /// Called when the write failed after the overlay was hidden, so it can be shown again.
+    var onInsertFailed: (() -> Void)?
 
     private let reader: any SelectionReading
     private let inserter: any TextInserting
@@ -60,7 +66,7 @@ final class RepromptSession {
         self.reader = reader
         self.inserter = inserter
         self.makeOptimizer = makeOptimizer ?? { config in
-            PromptOptimizer(client: ClaudeClient(apiKey: try APIKeyProvider.resolve()),
+            PromptOptimizer(client: try LLMClientFactory.make(provider: config.provider),
                             config: config, prompts: try PromptLibrary.loadAll())
         }
     }
@@ -151,7 +157,7 @@ final class RepromptSession {
             case .textDelta(let t):
                 if first == nil { first = clock.now; ttfbMs = Self.ms(first! - start) }
                 text += t
-            case .messageDelta(let reason, _): stop = reason
+            case .messageDelta(let reason, _, _): stop = reason
             case .messageStop, .ping: break
             case .error(let e): throw e
             }
@@ -191,6 +197,8 @@ final class RepromptSession {
         // Claim the phase before any await, so a second Accept cannot start a second paste.
         phase = .accepting
         task?.cancel()
+        // Synchronous, before any await: the panel must not still be key when the paste goes out.
+        onWillInsertText?()
         task = Task {
             do {
                 try await inserter.replace(sel, with: out, preferAccessibility: !didActivate)
@@ -199,6 +207,7 @@ final class RepromptSession {
                 onFinished?()
             } catch {
                 fail(error)
+                onInsertFailed?()
             }
         }
     }

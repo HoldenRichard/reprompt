@@ -4,6 +4,7 @@ import CoreGraphics
 /// Posts synthetic Cmd+key presses. Requires the Accessibility grant
 /// (`CGPreflightPostEventAccess`).
 enum KeySimulator {
+    static let keyA: CGKeyCode = 0
     static let keyC: CGKeyCode = 8
     static let keyV: CGKeyCode = 9
 
@@ -33,6 +34,7 @@ enum KeySimulator {
         up.post(tap: .cghidEventTap)
     }
 
+    static func selectAll() { press(keyA) }
     static func copy() { press(keyC) }
     static func paste() { press(keyV) }
 }

@@ -55,7 +55,8 @@ public struct SSEParser: Sendable {
                 return nil  // thinking_delta, signature_delta, input_json_delta: dropped
             case "message_delta":
                 let d = try dec.decode(MessageDelta.self, from: data)
-                return .messageDelta(stopReason: d.delta.stopReason, outputTokens: d.usage?.outputTokens ?? 0)
+                return .messageDelta(stopReason: d.delta.stopReason,
+                                     outputTokens: d.usage?.outputTokens ?? 0, inputTokens: 0)
             case "message_stop":
                 return .messageStop
             case "ping":

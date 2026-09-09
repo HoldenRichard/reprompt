@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import RepromptCore
 import ServiceManagement
@@ -7,6 +8,25 @@ enum Mode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { self == .quick ? "Quick" : "Clarify" }
     var symbol: String { self == .quick ? "bolt.fill" : "questionmark.bubble.fill" }
+}
+
+enum AppearanceSetting: String, Codable, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: "Match system"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil  // nil means "follow the system", not "no appearance"
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
 }
 
 enum OverlayPosition: String, Codable, CaseIterable, Identifiable {
@@ -71,15 +91,39 @@ final class AppSettings {
     private enum Key {
         static let mode = "mode", model = "modelID", effort = "effort", maxTokens = "maxTokens"
         static let thinking = "thinking", fastMode = "fastMode", position = "overlayPosition", hotkey = "hotkey"
+        static let provider = "provider", appearance = "appearance"
+        static let selectAllWhenEmpty = "selectAllWhenEmpty"
     }
 
     var mode: Mode { didSet { defaults.set(mode.rawValue, forKey: Key.mode) } }
+    /// Changing provider moves the model with it, so the two can never disagree.
+    var provider: Provider {
+        didSet {
+            defaults.set(provider.rawValue, forKey: Key.provider)
+            if ModelCatalog.info(for: modelID)?.provider != provider {
+                modelID = ModelCatalog.defaultModel(for: provider).id
+            }
+        }
+    }
     var modelID: String { didSet { defaults.set(modelID, forKey: Key.model) } }
     var effort: Effort { didSet { defaults.set(effort.rawValue, forKey: Key.effort) } }
     var maxTokens: Int { didSet { defaults.set(maxTokens, forKey: Key.maxTokens) } }
     var thinking: ThinkingMode { didSet { defaults.set(thinking.rawValue, forKey: Key.thinking) } }
     var fastMode: Bool { didSet { defaults.set(fastMode, forKey: Key.fastMode) } }
     var overlayPosition: OverlayPosition { didSet { defaults.set(overlayPosition.rawValue, forKey: Key.position) } }
+    /// Applied to the whole app, so the overlay and Settings follow it together.
+    var appearance: AppearanceSetting {
+        didSet {
+            defaults.set(appearance.rawValue, forKey: Key.appearance)
+            applyAppearance()
+        }
+    }
+
+    func applyAppearance() { NSApp?.appearance = appearance.nsAppearance }
+
+    /// With the cursor in a text field and nothing selected, the hotkey selects the whole
+    /// field and rewrites it. Off means the user must select text themselves.
+    var selectAllWhenEmpty: Bool { didSet { defaults.set(selectAllWhenEmpty, forKey: Key.selectAllWhenEmpty) } }
     var hotkey: Hotkey {
         didSet { if let d = try? JSONEncoder().encode(hotkey) { defaults.set(d, forKey: Key.hotkey) } }
     }
@@ -88,14 +132,24 @@ final class AppSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         mode = Mode(rawValue: defaults.string(forKey: Key.mode) ?? "") ?? .quick
+        let storedProvider = Provider(rawValue: defaults.string(forKey: Key.provider) ?? "")
+            ?? OptimizerConfig.default.provider
+        provider = storedProvider
         let storedModel = defaults.string(forKey: Key.model) ?? ""
-        modelID = ModelCatalog.info(for: storedModel) != nil ? storedModel : ModelCatalog.default.id
+        // A stored model that belongs to another provider is as bad as an unknown one.
+        modelID = ModelCatalog.info(for: storedModel)?.provider == storedProvider
+            ? storedModel
+            : ModelCatalog.defaultModel(for: storedProvider).id
         effort = Effort(rawValue: defaults.string(forKey: Key.effort) ?? "") ?? .low
         let mt = defaults.integer(forKey: Key.maxTokens)
         maxTokens = mt > 0 ? mt : 2048
         thinking = ThinkingMode(rawValue: defaults.string(forKey: Key.thinking) ?? "") ?? .adaptive
         fastMode = defaults.bool(forKey: Key.fastMode)
         overlayPosition = OverlayPosition(rawValue: defaults.string(forKey: Key.position) ?? "") ?? .cursor
+        appearance = AppearanceSetting(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
+        // Default on: absent key means "never set", not "off".
+        selectAllWhenEmpty = defaults.object(forKey: Key.selectAllWhenEmpty) == nil
+            ? true : defaults.bool(forKey: Key.selectAllWhenEmpty)
         if let d = defaults.data(forKey: Key.hotkey), let h = try? JSONDecoder().decode(Hotkey.self, from: d) {
             hotkey = h
         } else {
@@ -106,8 +160,8 @@ final class AppSettings {
     var model: ModelInfo { ModelCatalog.infoOrGeneric(for: modelID) }
 
     var optimizerConfig: OptimizerConfig {
-        OptimizerConfig(model: modelID, quickEffort: effort, clarifyEffort: .medium, maxTokens: maxTokens,
-                        quickThinking: thinking, fastMode: fastMode, useFallbacks: true)
+        OptimizerConfig(provider: provider, model: modelID, quickEffort: effort, clarifyEffort: .medium,
+                        maxTokens: maxTokens, quickThinking: thinking, fastMode: fastMode, useFallbacks: true)
     }
 
     /// `.requiresApproval` means the item IS registered but the user has not approved it in

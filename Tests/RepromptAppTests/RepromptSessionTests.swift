@@ -63,7 +63,7 @@ import Testing
         session.start()
         #expect(await waitUntil { if case .failed = session.phase { true } else { false } })
         guard case .failed(let message, let missingKey) = session.phase else { Issue.record("wrong phase"); return }
-        #expect(message.contains("No text is selected"))
+        #expect(message.contains("Nothing is selected"))
         #expect(!missingKey)
         #expect(!session.canAccept)
     }
@@ -159,6 +159,57 @@ import Testing
         session2.accept()
         #expect(await waitUntil { inserter2.calls.count == 1 })
         #expect(!inserter2.calls[0].preferAccessibility, "after activation the captured element is stale")
+    }
+
+    /// Regression: the overlay panel holds keyboard focus while it is open, and a synthetic
+    /// Cmd+V follows focus rather than activation. With the panel still key the paste landed
+    /// on Reprompt itself, so Accept appeared to do nothing and the user had to paste by hand.
+    @Test func focusIsHandedBackBeforeTheTextIsWritten() async throws {
+        let url = MockURLProtocol.install(.sse(sseLines(text: ["rewritten"])))
+        let inserter = FakeInserter()
+        let (session, _, cleanup) = makeSession(url: url, inserter: inserter)
+        defer { cleanup() }
+        var order: [String] = []
+        session.onWillInsertText = { order.append("relinquish focus") }
+        inserter.onReplace = { order.append("write text") }
+
+        session.start()
+        #expect(await waitUntil { session.phase == .result })
+        session.accept()
+        #expect(order.first == "relinquish focus", "focus must be given up before the paste")
+        #expect(await waitUntil { order.count == 2 })
+        #expect(order == ["relinquish focus", "write text"])
+    }
+
+    @Test func focusIsHandedBackOnlyOnceEvenIfAcceptIsPressedRepeatedly() async throws {
+        let url = MockURLProtocol.install(.sse(sseLines(text: ["x"])))
+        let inserter = FakeInserter()
+        inserter.delay = .milliseconds(120)
+        let (session, _, cleanup) = makeSession(url: url, inserter: inserter)
+        defer { cleanup() }
+        var hides = 0
+        session.onWillInsertText = { hides += 1 }
+        session.start()
+        #expect(await waitUntil { session.phase == .result })
+        session.accept()
+        session.accept()
+        session.accept()
+        #expect(hides == 1)
+    }
+
+    @Test func aFailedWriteAsksForTheOverlayBack() async throws {
+        let url = MockURLProtocol.install(.sse(sseLines(text: ["x"])))
+        let inserter = FakeInserter()
+        inserter.error = InsertError.cannotPostEvents
+        let (session, _, cleanup) = makeSession(url: url, inserter: inserter)
+        defer { cleanup() }
+        var revealed = 0
+        session.onInsertFailed = { revealed += 1 }
+        session.start()
+        #expect(await waitUntil { session.phase == .result })
+        session.accept()
+        #expect(await waitUntil { revealed == 1 }, "a hidden overlay must come back to show the error")
+        if case .failed = session.phase {} else { Issue.record("expected .failed, got \(session.phase)") }
     }
 
     @Test func acceptDoesNothingBeforeThereIsAResult() async throws {

@@ -18,8 +18,13 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("API key") {
-                SecureField("Anthropic API key", text: $keyInput)
+            Section("Service") {
+                LabeledContent("Provider", value: settings.provider.displayName)
+                Link("Get a key", destination: URL(string: settings.provider.consoleURL)!)
+                    .font(.caption)
+            }
+            Section("API key for \(settings.provider.displayName)") {
+                SecureField("\(settings.provider.displayName) API key", text: $keyInput)
                 HStack {
                     Button("Save to Keychain") { saveKey() }
                         .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -39,23 +44,34 @@ struct SettingsView: View {
                     ForEach(Mode.allCases) { Text($0.title).tag($0) }
                 }
                 Picker("Model", selection: $settings.modelID) {
-                    ForEach(ModelCatalog.all) { Text($0.displayName).tag($0.id) }
+                    ForEach(ModelCatalog.models(for: settings.provider)) { Text($0.displayName).tag($0.id) }
                 }
-                Picker("Effort (Quick mode)", selection: $settings.effort) {
-                    ForEach(Effort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                // The GPT-OSS models take a reasoning effort; the Qwen models do not, so the
+                // control disappears rather than sitting there greyed out.
+                if settings.model.supportsEffort {
+                    Picker("Effort (Quick mode)", selection: $settings.effort) {
+                        ForEach(Effort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
                 }
-                .disabled(!settings.model.supportsEffort)
-                Picker("Thinking (Quick mode)", selection: $settings.thinking) {
-                    Text("Adaptive").tag(ThinkingMode.adaptive)
-                    Text("Disabled where allowed").tag(ThinkingMode.disabled)
+                if settings.model.thinking != .budgetOnly {
+                    Picker("Thinking (Quick mode)", selection: $settings.thinking) {
+                        Text("Adaptive").tag(ThinkingMode.adaptive)
+                        Text("Disabled where allowed").tag(ThinkingMode.disabled)
+                    }
                 }
-                Toggle("Fast mode (Opus 5 only, 2x price)", isOn: $settings.fastMode)
-                    .disabled(!settings.model.supportsFastMode)
                 Stepper("Max tokens: \(settings.maxTokens)", value: $settings.maxTokens, in: 256...8192, step: 256)
+            }
+            Section("Hotkey behaviour") {
+                Toggle("Use the whole text field when nothing is selected", isOn: $settings.selectAllWhenEmpty)
+                Text("Only inside text fields. Elsewhere, the hotkey still needs a selection.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Overlay") {
                 Picker("Position", selection: $settings.overlayPosition) {
                     ForEach(OverlayPosition.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Appearance", selection: $settings.appearance) {
+                    ForEach(AppearanceSetting.allCases) { Text($0.title).tag($0) }
                 }
             }
             Section("System") {
@@ -102,19 +118,23 @@ struct SettingsView: View {
 
     private func saveKey() {
         do {
-            try KeychainStore.save(keyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+            try KeychainStore.save(keyInput.trimmingCharacters(in: .whitespacesAndNewlines),
+                                   account: settings.provider.keychainAccount)
             keyInput = ""
             refreshKeyStatus()
         } catch { keyStatus = "\(error)" }
     }
 
     private func removeKey() {
-        do { try KeychainStore.delete(); refreshKeyStatus() } catch { keyStatus = "\(error)" }
+        do {
+            try KeychainStore.delete(account: settings.provider.keychainAccount)
+            refreshKeyStatus()
+        } catch { keyStatus = "\(error)" }
     }
 
     private func refreshKeyStatus() {
         do {
-            if let k = try KeychainStore.read() {
+            if let k = try KeychainStore.read(account: settings.provider.keychainAccount) {
                 keyStatus = "Saved: \(APIKeyProvider.redacted(k))"
             } else {
                 keyStatus = "No key saved"

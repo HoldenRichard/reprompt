@@ -6,6 +6,8 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>Reprompt</string>
+    <key>CFBundleIconFile</key>
+    <string>Reprompt</string>
     <key>CFBundleIdentifier</key>
     <string>com.holdenrichard.reprompt</string>
     <key>CFBundleInfoDictionaryVersion</key>
