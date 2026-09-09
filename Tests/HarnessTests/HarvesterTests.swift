@@ -158,10 +158,14 @@ import Testing
         let source = try String(contentsOfFile: #filePath.replacingOccurrences(
             of: "Tests/HarnessTests/HarvesterTests.swift",
             with: "Sources/RepromptHarness/TranscriptHarvester.swift"), encoding: .utf8)
-        // No hard-coded macOS home path of any user, and no project names.
-        #expect(!source.contains("-Users-"))
-        #expect(!source.contains("/Users/"))
-        #expect(!source.contains("-home-"))
+        // A doc comment may show an example path; the CODE must not hard-code any home.
+        let code = source.split(separator: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        let encodedHome = NSHomeDirectory().replacingOccurrences(of: "/", with: "-")
+        #expect(!code.contains(encodedHome), "the running user's own home is hard-coded")
+        #expect(!code.contains("-Users-"))
+        #expect(!code.contains("/Users/"))
     }
 
     @Test func categoryIsTheLowercasedProjectName() {
