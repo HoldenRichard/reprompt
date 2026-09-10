@@ -59,8 +59,9 @@ has the hotkey, the model, dark mode, and the whole-field behaviour.
 
 ## Privacy
 
-The text you select is sent to Groq over HTTPS, once per rewrite, and nothing else leaves
-your Mac. Groq's stated policy is that it does not train on inputs on any tier and does not
+The text you select is sent to Groq over HTTPS and nothing else leaves your Mac. Quick mode
+sends it once; Clarify mode sends it twice, once to generate the questions and once with
+your answers for the rewrite. Groq's stated policy is that it does not train on inputs on any tier and does not
 retain them by default; read [their data page](https://console.groq.com/docs/your-data)
 and decide for yourself. Your API key lives in the macOS Keychain, never in a file.
 Clipboard-based reads and writes snapshot your clipboard and put it back afterwards.
